@@ -30,34 +30,6 @@
 </head>
 <body>
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.00 0.00 613.00 612.00" id="svg">
-      <defs>
-        <!-- 中央部分を切り抜くためのマスク定義 -->
-        <mask id="centerMask">
-          <!-- 白で全体を塗る -->
-          <rect x="0" y="0" width="613" height="612" fill="white"/>
-          <!-- 中央の円形部分を黒で切り抜く -->
-          <path fill="black" d="
-            M 132.62 242.57
-            Q 132.96 278.23 146.66 310.43
-            Q 176.34 380.18 247.54 408.79
-            Q 278.25 421.12 313.33 420.79
-            Q 348.41 420.46 378.88 407.55
-            Q 449.53 377.60 477.89 307.30
-            Q 490.98 274.86 490.64 239.19
-            Q 490.31 203.53 476.61 171.34
-            Q 446.92 101.58 375.72 72.98
-            Q 345.02 60.64 309.94 60.97
-            Q 274.86 61.30 244.39 74.21
-            Q 173.74 104.16 145.38 174.46
-            Q 132.29 206.91 132.62 242.57
-            Z"
-          />
-        </mask>
-      </defs>
-      
-      <!-- 黒い背景 -->
-      <rect x="0" y="0" width="613" height="612" fill="#000000"/>
-      
       <g stroke-width="2.00" fill="none" stroke-linecap="butt">
         <path stroke="#7e807f" vector-effect="non-scaling-stroke" d="
           M 132.62 242.57
@@ -635,11 +607,30 @@
           L 352.89 541.17
           A 1.31 1.31 0.0 0 0 351.57 542.47"
         />
-      </g>
-      
-      <!-- 音に反応する白色のパスをマスク付きで配置 -->
-      <g class="reactive-paths" mask="url(#centerMask)">
-        <path fill="#fbfffe" d="
+        </g>
+        <path fill="#000000" d="
+          M 613.00 0.00
+          L 613.00 612.00
+          L 0.00 612.00
+          L 0.00 0.00
+          L 613.00 0.00
+          Z
+          M 132.62 242.57
+          Q 132.96 278.23 146.66 310.43
+          Q 176.34 380.18 247.54 408.79
+          Q 278.25 421.12 313.33 420.79
+          Q 348.41 420.46 378.88 407.55
+          Q 449.53 377.60 477.89 307.30
+          Q 490.98 274.86 490.64 239.19
+          Q 490.31 203.53 476.61 171.34
+          Q 446.92 101.58 375.72 72.98
+          Q 345.02 60.64 309.94 60.97
+          Q 274.86 61.30 244.39 74.21
+          Q 173.74 104.16 145.38 174.46
+          Q 132.29 206.91 132.62 242.57
+          Z"
+        />
+        <path class="reactive" fill="#fbfffe" d="
           M 309.94 60.97
           Q 345.02 60.64 375.72 72.98
           Q 446.92 101.58 476.61 171.34
@@ -917,7 +908,7 @@
           Q 359.08 401.93 375.30 395.17
           Z"
         />
-        <path fill="#fbfffe" d="
+        <path class="reactive" fill="#fbfffe" d="
           M 286.39 481.97
           C 286.38 494.14 300.19 497.87 309.83 497.44
           Q 321.36 496.92 328.08 493.53
@@ -935,7 +926,7 @@
           C 300.21 466.08 286.39 469.79 286.39 481.97
           Z"
         />
-        <path fill="#fbfffe" d="
+        <path class="reactive" fill="#fbfffe" d="
           M 401.57 481.97
           C 401.58 471.88 409.28 465.10 418.50 462.83
           Q 434.29 458.94 449.93 464.95
@@ -953,7 +944,7 @@
           C 409.26 498.84 401.57 492.06 401.57 481.97
           Z"
         />
-        <path fill="#fbfffe" d="
+        <path class="reactive" fill="#fbfffe" d="
           M 53.93 501.92
           L 48.40 501.92
           A 0.40 0.40 0.0 0 1 48.00 501.52
@@ -977,7 +968,7 @@
           A 0.40 0.40 0.0 0 1 53.93 501.92
           Z"
         />
-        <path fill="#fbfffe" d="
+        <path class="reactive" fill="#fbfffe" d="
           M 112.57 496.01
           Q 112.57 496.64 113.22 496.64
           L 146.17 496.63
@@ -1005,7 +996,7 @@
           L 112.57 496.01
           Z"
         />
-        <path fill="#fbfffe" d="
+        <path class="reactive" fill="#fbfffe" d="
           M 206.64 496.98
           L 206.64 501.58
           A 0.35 0.35 0.0 0 1 206.29 501.93
@@ -1033,7 +1024,7 @@
           A 0.35 0.35 0.0 0 1 206.64 496.98
           Z"
         />
-        <path fill="#fbfffe" d="
+        <path class="reactive" fill="#fbfffe" d="
           M 264.86 496.98
           L 264.86 501.58
           A 0.35 0.35 0.0 0 1 264.51 501.93
@@ -1049,7 +1040,7 @@
           A 0.35 0.35 0.0 0 1 264.86 496.98
           Z"
         />
-        <path fill="#fbfffe" d="
+        <path class="reactive" fill="#fbfffe" d="
           M 366.57 481.39
           Q 366.64 481.39 366.71 481.37
           Q 366.77 481.35 366.82 481.29
@@ -1075,7 +1066,7 @@
           Q 366.50 481.39 366.57 481.39
           Z"
         />
-        <path fill="#fbfffe" d="
+        <path class="reactive" fill="#fbfffe" d="
           M 477.12 496.25
           A 0.38 0.38 0.0 0 0 477.50 496.63
           L 508.01 496.63
@@ -1091,7 +1082,7 @@
           L 477.12 496.25
           Z"
         />
-        <path fill="#fbfffe" d="
+        <path class="reactive" fill="#fbfffe" d="
           M 531.17 495.99
           Q 531.17 496.62 531.82 496.62
           L 564.74 496.63
@@ -1119,7 +1110,7 @@
           L 531.17 495.99
           Z"
         />
-        <path fill="#fbfffe" d="
+        <path class="reactive" fill="#fbfffe" d="
           M 236.17 546.00
           C 234.51 551.23 244.93 554.30 248.68 555.03
           C 255.55 556.37 265.50 558.14 270.02 562.55
@@ -1143,7 +1134,7 @@
           C 241.28 541.28 237.21 542.74 236.17 546.00
           Z"
         />
-        <path fill="#fbfffe" d="
+        <path class="reactive" fill="#fbfffe" d="
           M 294.21 561.54
           A 0.70 0.70 0.0 0 0 293.52 562.24
           L 293.52 577.36
@@ -1168,7 +1159,7 @@
           A 1.43 1.43 0.0 0 0 293.51 542.39
           Z"
         />
-        <path fill="#fbfffe" d="
+        <path class="reactive" fill="#fbfffe" d="
           M 374.61 561.95
           L 389.99 577.33
           A 0.11 0.11 0.0 0 1 389.91 577.51
@@ -1201,12 +1192,11 @@
           A 1.31 1.31 0.0 0 0 351.57 542.47
           Z"
         />
-      </g>
     </svg>
     <button id="startButton">Start Reacting to Sound</button>
     <script>
   const svg = document.getElementById('svg');
-  const svgElements = svg.querySelectorAll('.reactive-paths path[fill="#fbfffe"]');
+  const svgElements = svg.querySelectorAll('path.reactive[fill="#fbfffe"]');
   const startButton = document.getElementById('startButton');
 
   async function startAudio() {
