@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>React to Ambient Sound</title>
+    <title>React to Ambient Sound (Debug)</title>
     <style>
         body {
             margin: 0;
@@ -26,9 +26,46 @@
             font-size: 16px;
             cursor: pointer;
         }
+        #debug-panel {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.9);
+            color: #0f0;
+            padding: 15px;
+            font-family: monospace;
+            font-size: 11px;
+            max-width: 350px;
+            max-height: 80vh;
+            overflow-y: auto;
+            border: 2px solid #0f0;
+            z-index: 1000;
+            line-height: 1.4;
+        }
+        #debug-panel div {
+            margin: 3px 0;
+        }
+        .debug-header {
+            color: #ff0;
+            font-weight: bold;
+            margin-top: 10px;
+            border-top: 1px solid #ff0;
+            padding-top: 5px;
+        }
+        .debug-error {
+            color: #f00;
+            font-weight: bold;
+        }
+        .debug-success {
+            color: #0f0;
+        }
+        .debug-info {
+            color: #0ff;
+        }
     </style>
 </head>
 <body>
+    <div id="debug-panel"></div>
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.00 0.00 613.00 612.00" id="svg">
       <g stroke-width="2.00" fill="none" stroke-linecap="butt">
         <path stroke="#7e807f" vector-effect="non-scaling-stroke" d="
@@ -1198,8 +1235,19 @@
   const svg = document.getElementById('svg');
   const svgElements = svg.querySelectorAll('path.reactive[fill="#fbfffe"]');
   const startButton = document.getElementById('startButton');
+  const debugPanel = document.getElementById('debug-panel');
+
+  function log(message, className = '') {
+      const div = document.createElement('div');
+      div.textContent = message;
+      if (className) div.className = className;
+      debugPanel.appendChild(div);
+      debugPanel.scrollTop = debugPanel.scrollHeight;
+  }
 
   async function startAudio() {
+      log('=== 初期化開始 ===', 'debug-header');
+      
       try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
           const audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -1207,27 +1255,57 @@
           analyser.fftSize = 256;
           const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
+          log('✓ AudioContext作成完了', 'debug-success');
+          log(`FFT Size: ${analyser.fftSize}`, 'debug-info');
+          log(`Buffer Length: ${analyser.frequencyBinCount}`, 'debug-info');
+
           const source = audioContext.createMediaStreamSource(stream);
           source.connect(analyser);
+          
+          log('✓ マイクアクセス許可', 'debug-success');
+          
+          log('=== SVG要素の分析 ===', 'debug-header');
+          log(`class="reactive"の要素数: ${svgElements.length}個`);
+          
+          // 全要素の座標をログ出力
+          svgElements.forEach((element, index) => {
+              const d = element.getAttribute('d');
+              const match = d.match(/M\s*([\d.]+)\s*([\d.]+)/);
+              if (match) {
+                  const x = parseFloat(match[1]);
+                  const y = parseFloat(match[2]);
+                  log(`要素${index}: (${x.toFixed(1)}, ${y.toFixed(1)})`, 'debug-info');
+              }
+          });
+          
+          log('=== アニメーション開始 ===', 'debug-header');
 
           // 周波数を色に変換する関数（反転なし）
           function getRainbowColor(frequency) {
-              const hue = (frequency / 255) * 360; // 周波数値をそのまま使用
+              const hue = (frequency / 255) * 360;
               return `hsl(${hue}, 100%, 50%)`;
           }
 
+          let frameCount = 0;
+
           function animateColors() {
               analyser.getByteFrequencyData(dataArray);
+              frameCount++;
 
               // 平方根を適用してスケーリング
-              const processedData = dataArray.map(value => Math.sqrt(value) * 16); // 値を16倍してスケールを拡大
+              const processedData = dataArray.map(value => Math.sqrt(value) * 16);
+
+              // 60フレームごとにデバッグ情報
+              if (frameCount % 60 === 0) {
+                  const average = processedData.reduce((a, b) => a + b, 0) / processedData.length;
+                  const max = Math.max(...processedData);
+                  const min = Math.min(...processedData);
+                  log(`[Frame ${frameCount}] 平均=${average.toFixed(1)}, 最大=${max.toFixed(1)}, 最小=${min.toFixed(1)}`, 'debug-info');
+              }
 
               svgElements.forEach((element, index) => {
                   const frequency = processedData[index % processedData.length];
-
-                  // 値が範囲外になるのを防ぐために制限
                   const clampedFrequency = Math.min(255, Math.max(0, frequency));
-
                   const color = getRainbowColor(clampedFrequency);
                   element.setAttribute('fill', color);
               });
@@ -1236,12 +1314,13 @@
 
           animateColors();
       } catch (error) {
+          log(`❌ エラー: ${error.message}`, 'debug-error');
           alert('マイクへのアクセス中にエラーが発生しました: ' + error.message);
       }
   }
 
   startButton.addEventListener('click', () => {
-      startButton.style.display = 'none'; // ボタンを非表示
+      startButton.style.display = 'none';
       startAudio();
   });
 </script>
