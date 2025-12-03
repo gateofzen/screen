@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Interactive Audio Visualizer</title>
+    <title>FEELCYCLE Visualizer - No Rotation</title>
     <style>
         body {
             margin: 0;
@@ -15,27 +15,29 @@
             color: white;
             font-family: Arial, sans-serif;
             flex-direction: column;
-            overflow: hidden; /* スクロールバーを消す */
+            overflow: hidden;
         }
         
-        /* コンテナを作ってSVGの動きを制御しやすくする */
+        /* コンテナ: ここで全体の拡大縮小(Pulse)を行います */
         #visualizer-container {
             width: 80%;
             height: auto;
             display: flex;
             justify-content: center;
             align-items: center;
-            /* 回転などの基準点を中心に */
+            /* 拡大縮小の中心点 */
             transform-origin: center center;
-            will-change: transform, filter; /* パフォーマンス最適化 */
+            /* パフォーマンス最適化 */
+            will-change: transform, filter;
         }
 
         svg {
             width: 100%;
             height: auto;
-            /* デフォルトのドロップシャドウ（発光のベース） */
-            filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.3));
-            transition: filter 0.1s ease-out; /* 滑らかに変化させる */
+            /* 初期状態の発光（ネオン効果のベース） */
+            /* SVG内に背景の四角形パスがあるため、その縁が光ります */
+            filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.3));
+            transition: filter 0.1s ease-out;
         }
 
         button {
@@ -45,11 +47,15 @@
             padding: 15px 30px;
             font-size: 18px;
             cursor: pointer;
-            background: #fff;
-            border: none;
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+            border: 1px solid #fff;
             border-radius: 30px;
             font-weight: bold;
             transition: opacity 0.5s;
+        }
+        button:hover {
+            background: rgba(255, 255, 255, 0.4);
         }
     </style>
 </head>
@@ -1839,14 +1845,9 @@
     <button id="startButton">Start Visualizer</button>
 
     <script>
-    // 元のSVG構造を想定してスクリプトを記述します
-    // 実際の実装時は、あなたのHTMLの<svg>の中身をそのまま上の<div id="visualizer-container">内に移動してください
-
-    // もしSVGの中身が空だと動かないので、あなたのコードをJSで操作できるようにします
     const visualizerContainer = document.getElementById('visualizer-container');
     const svgElement = document.getElementById('svg');
-    // もしSVGの中身を省略してしまった場合のために、元のDOM構造から取得するように変更してください
-    // ここでは「クラス名 reactive-paths 内のパス」または「fillが#fbfffeのパス」を取得します
+    // 音に反応する白いパスを取得（クラス名またはfill属性で探す）
     const reactivePaths = document.querySelectorAll('.reactive-paths path, path[fill="#fbfffe"]');
     const startButton = document.getElementById('startButton');
 
@@ -1856,7 +1857,6 @@
             const audioContext = new (window.AudioContext || window.webkitAudioContext)();
             const analyser = audioContext.createAnalyser();
             
-            // FFTサイズを調整（低音を拾いやすくするため少し大きめに）
             analyser.fftSize = 512; 
             const bufferLength = analyser.frequencyBinCount;
             const dataArray = new Uint8Array(bufferLength);
@@ -1864,72 +1864,57 @@
             const source = audioContext.createMediaStreamSource(stream);
             source.connect(analyser);
 
-            // 回転角度の初期値
-            let rotation = 0;
+            // 回転用の変数は削除しました
 
             function animate() {
                 requestAnimationFrame(animate);
 
                 analyser.getByteFrequencyData(dataArray);
 
-                // --- 1. 低音（Bass）成分の抽出 ---
-                // 配列の最初の方（低周波数）の平均を取る
+                // 低音（Bass）成分の取得
                 let bassTotal = 0;
-                let bassRange = 20; // 0〜20番目のデータを低音とする
+                const bassRange = 20; 
                 for(let i = 0; i < bassRange; i++) {
                     bassTotal += dataArray[i];
                 }
                 const bassAverage = bassTotal / bassRange; // 0 ~ 255
 
-                // --- 2. 全体の音量平均 ---
+                // 全体の音量平均
                 let total = 0;
                 for(let i = 0; i < bufferLength; i++) {
                     total += dataArray[i];
                 }
                 const averageVolume = total / bufferLength;
 
-                // --- 改善A: 拡大縮小（Pulse） ---
-                // 低音が強いときほど大きく拡大する (1.0倍 〜 1.3倍程度)
-                const scale = 1 + (bassAverage / 255) * 0.4;
+                // --- 1. 拡大縮小（Pulse）のみ適用 ---
+                // キック音（低音）に合わせてドックンさせる動きは残します
+                const scale = 1 + (bassAverage / 255) * 0.3; 
                 
-                // --- 改善B: 回転（Rotation） ---
-                // 音量に応じて回転速度を変える
-                // 静かなときはゆっくり、激しいときは速く
-                rotation += 0.2 + (averageVolume / 255) * 2.0; 
+                // 回転(rotate)は削除しました
+                visualizerContainer.style.transform = `scale(${scale})`;
 
-                // --- CSS Transformの適用 ---
-                visualizerContainer.style.transform = `scale(${scale}) rotate(${rotation}deg)`;
+                // --- 2. 発光エフェクト（Glow） ---
+                // 音量に合わせて光の強さと色を変化させます
+                // 背景の四角形パスがあるため、四角い枠全体が光ります
+                const glowHue = (Date.now() / 50) % 360; // 色をゆっくり変化
+                const glowIntensity = 5 + (bassAverage / 255) * 40; // 最小5px〜最大45pxで発光
+                
+                svgElement.style.filter = `drop-shadow(0 0 ${glowIntensity}px hsl(${glowHue}, 100%, 50%))`;
 
-                // --- 改善C: 発光エフェクト（Glow） ---
-                // 音量に応じてドロップシャドウの色と強さを変える
-                // Hue（色相）を回転させてカラフルに
-                const glowHue = (Date.now() / 20) % 360; 
-                const glowIntensity = (bassAverage / 255) * 30; // 0px ~ 30px
-                svgElement.style.filter = `drop-shadow(0 0 ${glowIntensity}px hsl(${glowHue}, 100%, 60%))`;
-
-                // --- 既存機能: 個別パスの色変え ---
-                // 元のロジックを少し調整して維持
+                // --- 3. パスの色変化 ---
+                // 元のコードのロジックをベースに、少しリッチにしています
                 reactivePaths.forEach((path, index) => {
-                    // 低周波から高周波までまんべんなく割り当てる
-                    // ステップを調整して視覚的なバラつきを出す
-                    const dataIndex = Math.floor(index * (bufferLength / reactivePaths.length) * 0.5); 
+                    const dataIndex = Math.floor(index * (bufferLength / reactivePaths.length) * 0.8); 
                     const value = dataArray[dataIndex] || 0;
                     
-                    // 音がないときは少し暗く、音があるときは明るく鮮やかに
-                    const hue = (index * 10 + (averageVolume * 0.5)) % 360;
-                    const lightness = 30 + (value / 255) * 40; // 30% ~ 70%
-                    const alpha = 0.5 + (value / 255) * 0.5; // 透明度も変化
+                    // 色相: ベースの色がゆっくり変わりつつ、音量でも少し変化
+                    const hue = (index * 5 + (Date.now() / 100)) % 360;
+                    // 輝度: 音に合わせて明るく
+                    const lightness = 30 + (value / 255) * 60; 
+                    // 透明度
+                    const alpha = 0.6 + (value / 255) * 0.4;
 
                     path.setAttribute('fill', `hsla(${hue}, 100%, ${lightness}%, ${alpha})`);
-                    
-                    // おまけ: パスごとの微妙なズレ（振動）
-                    if (value > 200) {
-                        const jitterX = (Math.random() - 0.5) * 10;
-                        const jitterY = (Math.random() - 0.5) * 10;
-                        path.style.transform = `translate(${jitterX}px, ${jitterY}px)`;
-                    } else {
-                        path.style.transform = `translate(0, 0)`;
-                    }
                 });
             }
 
@@ -1937,12 +1922,12 @@
 
         } catch (error) {
             console.error(error);
-            alert('マイクへのアクセス中にエラーが発生しました。\nブラウザの設定を確認してください。');
+            alert('マイク使用の許可が必要です。ブラウザの設定を確認してください。');
         }
     }
 
     startButton.addEventListener('click', () => {
-        startButton.style.opacity = '0'; // フェードアウト
+        startButton.style.opacity = '0';
         setTimeout(() => startButton.style.display = 'none', 500);
         startAudio();
     });
