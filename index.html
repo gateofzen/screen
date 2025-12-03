@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FEELCYCLE Visualizer - No Rotation</title>
+    <title>FEELCYCLE Visualizer - Responsive & No Sleep</title>
     <style>
         body {
             margin: 0;
@@ -11,41 +11,50 @@
             justify-content: center;
             align-items: center;
             height: 100vh;
+            width: 100vw;
             background-color: black;
             color: white;
             font-family: Arial, sans-serif;
             flex-direction: column;
-            overflow: hidden;
+            overflow: hidden; /* スクロールバーを出さない */
         }
         
-        /* コンテナ: ここで全体の拡大縮小(Pulse)を行います */
+        /* ビジュアライザーのコンテナ
+           ここが「画面の縦横どちらか短い方」に合わせてサイズを決めます。
+        */
         #visualizer-container {
-            width: 80%;
-            height: auto;
             display: flex;
             justify-content: center;
             align-items: center;
-            /* 拡大縮小の中心点 */
             transform-origin: center center;
-            /* パフォーマンス最適化 */
             will-change: transform, filter;
+
+            /* 画面の幅と高さ、どちらか小さいほうの90%のサイズにする */
+            width: 90vmin;
+            height: 90vmin;
+            
+            /* ただし、極端に横長・縦長の場合にはみ出さないように安全策として最大値も設定 */
+            max-width: 95vw;
+            max-height: 95vh;
         }
 
         svg {
             width: 100%;
-            height: auto;
-            /* 初期状態の発光（ネオン効果のベース） */
-            /* SVG内に背景の四角形パスがあるため、その縁が光ります */
+            height: 100%;
+            /* 縦横比を維持して収める */
+            object-fit: contain;
+            
+            /* ネオン発光の初期値 */
             filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.3));
             transition: filter 0.1s ease-out;
         }
 
         button {
             position: absolute;
-            bottom: 30px;
+            bottom: 5vh; /* 下からの位置も画面高さに対する割合で指定 */
             z-index: 100;
             padding: 15px 30px;
-            font-size: 18px;
+            font-size: 1.2rem; /* 文字サイズも相対的に */
             cursor: pointer;
             background: rgba(255, 255, 255, 0.2);
             color: #fff;
@@ -53,6 +62,8 @@
             border-radius: 30px;
             font-weight: bold;
             transition: opacity 0.5s;
+            /* タップ時のハイライトを消す（スマホ用） */
+            -webkit-tap-highlight-color: transparent;
         }
         button:hover {
             background: rgba(255, 255, 255, 0.4);
@@ -62,7 +73,7 @@
 <body>
 
     <div id="visualizer-container">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.00 0.00 613.00 612.00" id="svg">
+       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.00 0.00 613.00 612.00" id="svg">
       <defs>
         <!-- 中央部分を切り抜くためのマスク定義 -->
         <mask id="centerMask">
@@ -1847,12 +1858,43 @@
     <script>
     const visualizerContainer = document.getElementById('visualizer-container');
     const svgElement = document.getElementById('svg');
-    // 音に反応する白いパスを取得（クラス名またはfill属性で探す）
     const reactivePaths = document.querySelectorAll('.reactive-paths path, path[fill="#fbfffe"]');
     const startButton = document.getElementById('startButton');
 
+    // --- 画面常時オン機能 (Wake Lock API) ---
+    let wakeLock = null;
+
+    async function requestWakeLock() {
+        if ('wakeLock' in navigator) {
+            try {
+                wakeLock = await navigator.wakeLock.request('screen');
+                console.log('画面常時オン: 有効');
+                
+                // 画面切り替えなどでロックが外れた場合に再取得を試みる
+                wakeLock.addEventListener('release', () => {
+                    console.log('画面常時オン: 解除されました');
+                });
+            } catch (err) {
+                console.error(`Wake Lock エラー: ${err.name}, ${err.message}`);
+            }
+        } else {
+            console.log('このブラウザは画面常時オン機能に対応していません。端末設定を確認してください。');
+        }
+    }
+    // ページが再びアクティブになったときに再取得する
+    document.addEventListener('visibilitychange', async () => {
+        if (wakeLock !== null && document.visibilityState === 'visible') {
+            await requestWakeLock();
+        }
+    });
+
+
+    // --- オーディオビジュアライザー機能 ---
     async function startAudio() {
         try {
+            // ここで画面ロックをリクエスト
+            await requestWakeLock();
+
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             const audioContext = new (window.AudioContext || window.webkitAudioContext)();
             const analyser = audioContext.createAnalyser();
@@ -1864,54 +1906,44 @@
             const source = audioContext.createMediaStreamSource(stream);
             source.connect(analyser);
 
-            // 回転用の変数は削除しました
-
             function animate() {
                 requestAnimationFrame(animate);
 
                 analyser.getByteFrequencyData(dataArray);
 
-                // 低音（Bass）成分の取得
+                // 低音（Bass）
                 let bassTotal = 0;
                 const bassRange = 20; 
                 for(let i = 0; i < bassRange; i++) {
                     bassTotal += dataArray[i];
                 }
-                const bassAverage = bassTotal / bassRange; // 0 ~ 255
+                const bassAverage = bassTotal / bassRange; 
 
-                // 全体の音量平均
+                // 全体音量
                 let total = 0;
                 for(let i = 0; i < bufferLength; i++) {
                     total += dataArray[i];
                 }
                 const averageVolume = total / bufferLength;
 
-                // --- 1. 拡大縮小（Pulse）のみ適用 ---
-                // キック音（低音）に合わせてドックンさせる動きは残します
-                const scale = 1 + (bassAverage / 255) * 0.3; 
-                
-                // 回転(rotate)は削除しました
+                // 1. 拡大縮小（Pulse）
+                // 画面全体が収まるようにしているので、少し拡大してもはみ出しにくいですが、
+                // 派手に動きすぎると切れるので倍率は控えめに(最大1.2倍程度)
+                const scale = 1 + (bassAverage / 255) * 0.2; 
                 visualizerContainer.style.transform = `scale(${scale})`;
 
-                // --- 2. 発光エフェクト（Glow） ---
-                // 音量に合わせて光の強さと色を変化させます
-                // 背景の四角形パスがあるため、四角い枠全体が光ります
-                const glowHue = (Date.now() / 50) % 360; // 色をゆっくり変化
-                const glowIntensity = 5 + (bassAverage / 255) * 40; // 最小5px〜最大45pxで発光
-                
+                // 2. 発光エフェクト（Glow）
+                const glowHue = (Date.now() / 50) % 360; 
+                const glowIntensity = 5 + (bassAverage / 255) * 40;
                 svgElement.style.filter = `drop-shadow(0 0 ${glowIntensity}px hsl(${glowHue}, 100%, 50%))`;
 
-                // --- 3. パスの色変化 ---
-                // 元のコードのロジックをベースに、少しリッチにしています
+                // 3. パスの色変化
                 reactivePaths.forEach((path, index) => {
                     const dataIndex = Math.floor(index * (bufferLength / reactivePaths.length) * 0.8); 
                     const value = dataArray[dataIndex] || 0;
                     
-                    // 色相: ベースの色がゆっくり変わりつつ、音量でも少し変化
                     const hue = (index * 5 + (Date.now() / 100)) % 360;
-                    // 輝度: 音に合わせて明るく
                     const lightness = 30 + (value / 255) * 60; 
-                    // 透明度
                     const alpha = 0.6 + (value / 255) * 0.4;
 
                     path.setAttribute('fill', `hsla(${hue}, 100%, ${lightness}%, ${alpha})`);
@@ -1922,7 +1954,7 @@
 
         } catch (error) {
             console.error(error);
-            alert('マイク使用の許可が必要です。ブラウザの設定を確認してください。');
+            alert('エラーが発生しました。\n・マイクの許可\n・HTTPS接続\nを確認してください。');
         }
     }
 
