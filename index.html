@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FEELCYCLE Visualizer - Responsive & No Sleep</title>
+    <title>FEELCYCLE Visualizer - Final</title>
     <style>
         body {
             margin: 0;
@@ -16,24 +16,17 @@
             color: white;
             font-family: Arial, sans-serif;
             flex-direction: column;
-            overflow: hidden; /* スクロールバーを出さない */
+            overflow: hidden;
         }
         
-        /* ビジュアライザーのコンテナ
-           ここが「画面の縦横どちらか短い方」に合わせてサイズを決めます。
-        */
         #visualizer-container {
             display: flex;
             justify-content: center;
             align-items: center;
             transform-origin: center center;
             will-change: transform, filter;
-
-            /* 画面の幅と高さ、どちらか小さいほうの90%のサイズにする */
             width: 90vmin;
             height: 90vmin;
-            
-            /* ただし、極端に横長・縦長の場合にはみ出さないように安全策として最大値も設定 */
             max-width: 95vw;
             max-height: 95vh;
         }
@@ -41,39 +34,38 @@
         svg {
             width: 100%;
             height: 100%;
-            /* 縦横比を維持して収める */
             object-fit: contain;
-            
-            /* ネオン発光の初期値 */
-            filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.3));
-            transition: filter 0.1s ease-out;
+            /* 発光エフェクト：統一感を出すため青白い光に固定 */
+            filter: drop-shadow(0 0 8px rgba(0, 150, 255, 0.4));
+            transition: filter 0.05s linear;
         }
 
         button {
             position: absolute;
-            bottom: 5vh; /* 下からの位置も画面高さに対する割合で指定 */
+            bottom: 5vh;
             z-index: 100;
             padding: 15px 30px;
-            font-size: 1.2rem; /* 文字サイズも相対的に */
+            font-size: 1.2rem;
             cursor: pointer;
-            background: rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.1);
             color: #fff;
-            border: 1px solid #fff;
+            border: 1px solid rgba(255, 255, 255, 0.5);
             border-radius: 30px;
-            font-weight: bold;
-            transition: opacity 0.5s;
-            /* タップ時のハイライトを消す（スマホ用） */
+            font-weight: normal;
+            letter-spacing: 2px;
+            transition: all 0.5s;
             -webkit-tap-highlight-color: transparent;
         }
         button:hover {
-            background: rgba(255, 255, 255, 0.4);
+            background: rgba(255, 255, 255, 0.3);
+            border-color: #fff;
         }
     </style>
 </head>
 <body>
 
     <div id="visualizer-container">
-       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.00 0.00 613.00 612.00" id="svg">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.00 0.00 613.00 612.00" id="svg">
       <defs>
         <!-- 中央部分を切り抜くためのマスク定義 -->
         <mask id="centerMask">
@@ -684,269 +676,6 @@
       <!-- 音に反応する白色のパスをマスク付きで配置 -->
       <g class="reactive-paths" mask="url(#centerMask)">
         </g>
-        <!-- 黒色の背景（全体の四角形） -->
-        <path fill="#000000" d="
-          M 613.00 0.00
-          L 613.00 612.00
-          L 0.00 612.00
-          L 0.00 0.00
-          L 613.00 0.00
-          Z
-          M 132.62 242.57
-          Q 132.96 278.23 146.66 310.43
-          Q 176.34 380.18 247.54 408.79
-          Q 278.25 421.12 313.33 420.79
-          Q 348.41 420.46 378.88 407.55
-          Q 449.53 377.60 477.89 307.30
-          Q 490.98 274.86 490.64 239.19
-          Q 490.31 203.53 476.61 171.34
-          Q 446.92 101.58 375.72 72.98
-          Q 345.02 60.64 309.94 60.97
-          Q 274.86 61.30 244.39 74.21
-          Q 173.74 104.16 145.38 174.46
-          Q 132.29 206.91 132.62 242.57
-          Z
-          M 279.68 481.96
-          C 279.67 492.05 287.37 498.84 296.59 501.12
-          Q 312.37 505.03 328.02 499.04
-          Q 328.35 498.92 328.35 498.57
-          L 328.35 493.69
-          Q 328.35 493.39 328.08 493.53
-          Q 321.36 496.92 309.83 497.44
-          C 300.19 497.87 286.38 494.14 286.39 481.97
-          C 286.39 469.79 300.21 466.08 309.85 466.53
-          Q 321.38 467.06 328.09 470.46
-          Q 328.36 470.60 328.36 470.30
-          L 328.37 465.42
-          Q 328.37 465.07 328.04 464.95
-          Q 312.40 458.94 296.61 462.82
-          C 287.39 465.10 279.68 471.87 279.68 481.96
-          Z
-          M 401.57 481.97
-          C 401.57 492.06 409.26 498.84 418.48 501.13
-          Q 434.26 505.03 449.91 499.04
-          Q 450.24 498.92 450.24 498.57
-          L 450.24 493.69
-          Q 450.24 493.39 449.97 493.53
-          Q 443.25 496.92 431.72 497.44
-          C 422.08 497.87 408.27 494.15 408.28 481.97
-          C 408.29 469.80 422.10 466.08 431.74 466.53
-          Q 443.27 467.06 449.98 470.46
-          Q 450.25 470.60 450.25 470.30
-          L 450.26 465.42
-          Q 450.26 465.07 449.93 464.95
-          Q 434.29 458.94 418.50 462.83
-          C 409.28 465.10 401.58 471.88 401.57 481.97
-          Z
-          M 53.93 501.92
-          A 0.40 0.40 0.0 0 0 54.33 501.52
-          L 54.33 485.47
-          A 0.40 0.40 0.0 0 1 54.73 485.07
-          L 81.73 485.07
-          A 0.40 0.40 0.0 0 0 82.13 484.67
-          L 82.13 480.21
-          A 0.40 0.40 0.0 0 0 81.73 479.81
-          L 54.72 479.81
-          A 0.40 0.40 0.0 0 1 54.32 479.41
-          L 54.32 467.71
-          A 0.40 0.40 0.0 0 1 54.72 467.31
-          L 87.80 467.31
-          A 0.40 0.40 0.0 0 0 88.20 466.91
-          L 88.20 462.40
-          A 0.40 0.40 0.0 0 0 87.80 462.00
-          L 48.40 462.00
-          A 0.40 0.40 0.0 0 0 48.00 462.40
-          L 48.00 501.52
-          A 0.40 0.40 0.0 0 0 48.40 501.92
-          L 53.93 501.92
-          Z
-          M 112.57 496.01
-          L 112.57 484.31
-          Q 112.57 483.88 113.00 483.88
-          L 140.37 483.87
-          Q 140.70 483.87 140.70 483.49
-          L 140.72 478.96
-          Q 140.72 478.56 140.27 478.56
-          L 113.08 478.57
-          Q 112.57 478.57 112.57 478.07
-          L 112.57 467.66
-          Q 112.57 467.17 113.08 467.17
-          L 146.08 467.18
-          Q 146.41 467.18 146.41 466.85
-          L 146.41 462.35
-          Q 146.41 461.99 146.06 461.99
-          L 106.72 461.99
-          Q 106.19 461.99 106.19 462.52
-          L 106.19 501.45
-          Q 106.19 501.94 106.69 501.94
-          L 146.21 501.94
-          Q 146.42 501.94 146.42 501.72
-          L 146.43 496.89
-          Q 146.43 496.63 146.17 496.63
-          L 113.22 496.64
-          Q 112.57 496.64 112.57 496.01
-          Z
-          M 206.64 496.98
-          A 0.35 0.35 0.0 0 0 206.29 496.63
-          L 173.16 496.63
-          A 0.35 0.35 0.0 0 1 172.81 496.28
-          L 172.81 484.23
-          A 0.35 0.35 0.0 0 1 173.16 483.88
-          L 200.58 483.88
-          A 0.35 0.35 0.0 0 0 200.93 483.53
-          L 200.93 478.92
-          A 0.35 0.35 0.0 0 0 200.58 478.57
-          L 173.16 478.57
-          A 0.35 0.35 0.0 0 1 172.81 478.22
-          L 172.81 467.54
-          A 0.35 0.35 0.0 0 1 173.16 467.19
-          L 206.28 467.19
-          A 0.35 0.35 0.0 0 0 206.63 466.84
-          L 206.63 462.35
-          A 0.35 0.35 0.0 0 0 206.28 462.00
-          L 166.78 462.00
-          A 0.35 0.35 0.0 0 0 166.43 462.35
-          L 166.43 501.58
-          A 0.35 0.35 0.0 0 0 166.78 501.93
-          L 206.29 501.93
-          A 0.35 0.35 0.0 0 0 206.64 501.58
-          L 206.64 496.98
-          Z
-          M 264.86 496.98
-          A 0.35 0.35 0.0 0 0 264.51 496.63
-          L 233.98 496.63
-          A 0.35 0.35 0.0 0 1 233.63 496.28
-          L 233.63 462.37
-          A 0.35 0.35 0.0 0 0 233.28 462.02
-          L 227.67 462.02
-          A 0.35 0.35 0.0 0 0 227.32 462.37
-          L 227.32 501.58
-          A 0.35 0.35 0.0 0 0 227.67 501.93
-          L 264.51 501.93
-          A 0.35 0.35 0.0 0 0 264.86 501.58
-          L 264.86 496.98
-          Z
-          M 366.55 501.94
-          Q 368.68 501.94 369.22 501.89
-          Q 369.69 501.85 369.69 501.38
-          L 369.69 487.21
-          Q 369.69 486.69 370.03 486.31
-          L 391.78 462.18
-          A 0.09 0.08 -69.1 0 0 391.72 462.04
-          L 384.06 462.04
-          Q 383.80 462.04 383.63 462.24
-          Q 374.76 472.35 366.82 481.29
-          Q 366.77 481.35 366.71 481.37
-          Q 366.64 481.39 366.57 481.39
-          Q 366.50 481.39 366.43 481.37
-          Q 366.37 481.35 366.32 481.29
-          Q 358.40 472.34 349.54 462.21
-          Q 349.37 462.01 349.11 462.01
-          L 341.45 462.00
-          A 0.09 0.08 69.2 0 0 341.39 462.14
-          L 363.10 486.30
-          Q 363.44 486.68 363.44 487.20
-          L 363.41 501.37
-          Q 363.41 501.84 363.88 501.89
-          Q 364.42 501.94 366.55 501.94
-          Z
-          M 477.12 496.25
-          L 477.13 462.33
-          Q 477.13 462.00 476.80 462.00
-          L 471.02 462.00
-          Q 470.82 462.00 470.82 462.20
-          L 470.82 501.70
-          A 0.23 0.23 0.0 0 0 471.05 501.93
-          L 508.05 501.94
-          A 0.33 0.33 0.0 0 0 508.38 501.61
-          L 508.38 497.00
-          Q 508.38 496.63 508.01 496.63
-          L 477.50 496.63
-          A 0.38 0.38 0.0 0 1 477.12 496.25
-          Z
-          M 531.17 495.99
-          L 531.18 484.31
-          Q 531.18 483.88 531.61 483.88
-          L 558.95 483.87
-          Q 559.28 483.87 559.28 483.49
-          L 559.30 478.97
-          Q 559.30 478.57 558.85 478.57
-          L 531.69 478.57
-          Q 531.18 478.57 531.18 478.07
-          L 531.18 467.67
-          Q 531.18 467.18 531.69 467.18
-          L 564.66 467.20
-          Q 564.99 467.20 564.99 466.87
-          L 564.99 462.38
-          Q 564.99 462.02 564.64 462.02
-          L 525.34 462.00
-          Q 524.81 462.00 524.81 462.53
-          L 524.80 501.43
-          Q 524.80 501.92 525.30 501.92
-          L 564.78 501.93
-          Q 564.99 501.93 564.99 501.71
-          L 565.00 496.89
-          Q 565.00 496.63 564.74 496.63
-          L 531.82 496.62
-          Q 531.17 496.62 531.17 495.99
-          Z
-          M 236.17 546.00
-          C 237.21 542.74 241.28 541.28 244.51 540.78
-          Q 256.03 539.01 268.46 542.58
-          Q 268.55 542.61 268.55 542.51
-          L 268.55 538.69
-          Q 268.55 538.41 268.28 538.35
-          Q 257.38 536.20 249.00 536.57
-          C 242.39 536.87 229.34 538.24 229.94 547.55
-          C 230.36 554.09 237.52 556.52 242.94 557.83
-          C 249.98 559.53 257.06 560.25 262.17 563.47
-          C 264.55 564.98 266.21 568.12 264.03 570.60
-          C 261.26 573.76 256.11 574.53 251.76 574.73
-          Q 240.95 575.22 230.25 572.06
-          A 0.18 0.18 0.0 0 0 230.02 572.23
-          L 230.02 576.02
-          Q 230.02 576.29 230.29 576.36
-          Q 241.03 578.84 252.27 578.40
-          C 257.82 578.19 264.61 577.27 269.09 573.84
-          C 272.71 571.07 273.40 565.83 270.02 562.55
-          C 265.50 558.14 255.55 556.37 248.68 555.03
-          C 244.93 554.30 234.51 551.23 236.17 546.00
-          Z
-          M 294.21 561.54
-          C 302.54 561.45 316.58 562.89 325.14 557.17
-          C 330.99 553.27 330.62 544.96 324.65 541.41
-          C 319.17 538.16 312.07 537.45 306.01 537.49
-          Q 295.50 537.56 286.92 537.43
-          Q 286.49 537.42 286.49 537.84
-          L 286.49 577.45
-          Q 286.49 577.54 286.59 577.54
-          L 293.34 577.54
-          Q 293.52 577.54 293.52 577.36
-          L 293.52 562.24
-          A 0.70 0.70 0.0 0 1 294.21 561.54
-          Z
-          M 374.71 561.14
-          C 375.51 560.67 376.29 560.27 377.30 560.09
-          C 381.58 559.32 388.04 556.62 388.96 551.78
-          C 391.06 540.86 376.85 538.20 369.04 538.07
-          Q 362.77 537.97 344.97 538.06
-          Q 344.50 538.07 344.50 538.54
-          L 344.50 577.33
-          Q 344.50 577.53 344.70 577.53
-          L 351.30 577.53
-          Q 351.51 577.53 351.51 577.32
-          L 351.51 562.46
-          Q 351.51 561.53 352.43 561.53
-          Q 361.41 561.47 365.51 561.49
-          Q 367.16 561.49 368.82 563.18
-          Q 375.15 569.65 382.23 577.30
-          Q 382.43 577.51 382.71 577.51
-          L 389.91 577.51
-          A 0.11 0.11 0.0 0 0 389.99 577.33
-          L 374.61 561.95
-          Q 374.14 561.48 374.71 561.14
-          Z"
-        />
         <!-- 中央の幾何学模様の黒色パーツ -->
         <path fill="#000000" d="
           M 248.09 86.56
@@ -1853,7 +1582,7 @@
     </svg>
     </div>
 
-    <button id="startButton">Start Visualizer</button>
+    <button id="startButton">SYSTEM START</button>
 
     <script>
     const visualizerContainer = document.getElementById('visualizer-container');
@@ -1861,45 +1590,30 @@
     const reactivePaths = document.querySelectorAll('.reactive-paths path, path[fill="#fbfffe"]');
     const startButton = document.getElementById('startButton');
 
-    // --- 画面常時オン機能 (Wake Lock API) ---
+    // --- 画面常時オン (Wake Lock) ---
     let wakeLock = null;
-
     async function requestWakeLock() {
         if ('wakeLock' in navigator) {
             try {
                 wakeLock = await navigator.wakeLock.request('screen');
-                console.log('画面常時オン: 有効');
-                
-                // 画面切り替えなどでロックが外れた場合に再取得を試みる
-                wakeLock.addEventListener('release', () => {
-                    console.log('画面常時オン: 解除されました');
-                });
-            } catch (err) {
-                console.error(`Wake Lock エラー: ${err.name}, ${err.message}`);
-            }
-        } else {
-            console.log('このブラウザは画面常時オン機能に対応していません。端末設定を確認してください。');
+                wakeLock.addEventListener('release', () => console.log('Screen Lock Released'));
+            } catch (err) { console.error(err); }
         }
     }
-    // ページが再びアクティブになったときに再取得する
     document.addEventListener('visibilitychange', async () => {
-        if (wakeLock !== null && document.visibilityState === 'visible') {
-            await requestWakeLock();
-        }
+        if (wakeLock !== null && document.visibilityState === 'visible') await requestWakeLock();
     });
 
-
-    // --- オーディオビジュアライザー機能 ---
+    // --- オーディオビジュアライザー ---
     async function startAudio() {
         try {
-            // ここで画面ロックをリクエスト
             await requestWakeLock();
 
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             const audioContext = new (window.AudioContext || window.webkitAudioContext)();
             const analyser = audioContext.createAnalyser();
             
-            analyser.fftSize = 512; 
+            analyser.fftSize = 1024; // 解像度を上げて低音をより正確に
             const bufferLength = analyser.frequencyBinCount;
             const dataArray = new Uint8Array(bufferLength);
 
@@ -1911,42 +1625,47 @@
 
                 analyser.getByteFrequencyData(dataArray);
 
-                // 低音（Bass）
+                // 低音取得
                 let bassTotal = 0;
-                const bassRange = 20; 
+                const bassRange = 10; // より低い音に限定
                 for(let i = 0; i < bassRange; i++) {
                     bassTotal += dataArray[i];
                 }
-                const bassAverage = bassTotal / bassRange; 
-
-                // 全体音量
-                let total = 0;
-                for(let i = 0; i < bufferLength; i++) {
-                    total += dataArray[i];
-                }
-                const averageVolume = total / bufferLength;
+                const bassAverage = bassTotal / bassRange;
 
                 // 1. 拡大縮小（Pulse）
-                // 画面全体が収まるようにしているので、少し拡大してもはみ出しにくいですが、
-                // 派手に動きすぎると切れるので倍率は控えめに(最大1.2倍程度)
-                const scale = 1 + (bassAverage / 255) * 0.2; 
+                // 動きを非常に小さくしました (係数を 0.3 -> 0.08 に変更)
+                const scale = 1 + (bassAverage / 255) * 0.08; 
                 visualizerContainer.style.transform = `scale(${scale})`;
 
                 // 2. 発光エフェクト（Glow）
-                const glowHue = (Date.now() / 50) % 360; 
-                const glowIntensity = 5 + (bassAverage / 255) * 40;
-                svgElement.style.filter = `drop-shadow(0 0 ${glowIntensity}px hsl(${glowHue}, 100%, 50%))`;
+                // 統一感を出すため、音量に応じて「青い光」の強さだけを変える
+                const glowIntensity = 2 + (bassAverage / 255) * 25; // 控えめな発光
+                // 色は青(210度付近)に固定
+                svgElement.style.filter = `drop-shadow(0 0 ${glowIntensity}px hsla(210, 100%, 60%, 0.6))`;
 
-                // 3. パスの色変化
+                // 3. パスの色変化（ルール統一）
                 reactivePaths.forEach((path, index) => {
-                    const dataIndex = Math.floor(index * (bufferLength / reactivePaths.length) * 0.8); 
+                    // パスのインデックス（順番）に基づいて周波数を割り当て
+                    // indexが小さい＝低音（Bass）、indexが大きい＝高音（Treble）にマッピング
+                    
+                    // パスの総数に合わせてデータ位置を計算
+                    const ratio = index / reactivePaths.length;
+                    const dataIndex = Math.floor(ratio * (bufferLength * 0.6)); 
                     const value = dataArray[dataIndex] || 0;
                     
-                    const hue = (index * 5 + (Date.now() / 100)) % 360;
-                    const lightness = 30 + (value / 255) * 60; 
-                    const alpha = 0.6 + (value / 255) * 0.4;
+                    // 【色のルール】
+                    // 低音側 (ratio 0.0) -> 青 (Hue 220)
+                    // 高音側 (ratio 1.0) -> 紫〜ピンク (Hue 300)
+                    // これにより、常に左上や中心などの「低音パーツ」は青く、端の「高音パーツ」は紫になります
+                    const fixedHue = 220 + (ratio * 80); 
 
-                    path.setAttribute('fill', `hsla(${hue}, 100%, ${lightness}%, ${alpha})`);
+                    // 音量ゼロのときは暗いグレー、音が出ると鮮やかに
+                    const saturation = 80;
+                    const lightness = 15 + (value / 255) * 50; // 最大65%の明るさ
+                    const alpha = 0.4 + (value / 255) * 0.6;   // 音がないときは少し透ける
+
+                    path.setAttribute('fill', `hsla(${fixedHue}, ${saturation}%, ${lightness}%, ${alpha})`);
                 });
             }
 
@@ -1954,7 +1673,7 @@
 
         } catch (error) {
             console.error(error);
-            alert('エラーが発生しました。\n・マイクの許可\n・HTTPS接続\nを確認してください。');
+            alert('マイク使用の許可が必要です。');
         }
     }
 
