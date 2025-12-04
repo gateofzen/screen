@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FEELCYCLE Visualizer - Auto Smart Fix</title>
+    <title>FEELCYCLE Visualizer - Clean & Vivid</title>
     <style>
         body {
             margin: 0;
@@ -36,12 +36,20 @@
             width: 100%;
             height: 100%;
             object-fit: contain;
-            filter: none !important; /* 全体フィルタはOFF */
+            filter: none !important;
         }
 
-        /* プログラムで「光る」と判定されたパーツ用クラス */
-        .glow-target {
+        /* 【重要】すべてのパスの「枠線」を強制的に消します。
+           これにより「白い縁」がなくなり、中身の色だけが綺麗に見えます。 */
+        path {
+            stroke: none !important; 
+            stroke-width: 0 !important;
             transition: fill 0.05s linear; /* 色変化をスムーズに */
+        }
+
+        /* 光るエフェクトのコンテナ */
+        #visualizer-container.glowing {
+            /* JSで動的にフィルタがかかります */
         }
 
         button {
@@ -1849,56 +1857,41 @@
     const visualizerContainer = document.getElementById('visualizer-container');
     const svgElement = document.getElementById('svg');
     const startButton = document.getElementById('startButton');
-    let reactivePaths = []; // 光らせるパーツのリスト
+    let reactivePaths = []; 
 
-    // --- 自動仕分け・補正プログラム ---
+    // --- 自動補正セットアップ ---
     function setupSVG() {
         const allPaths = svgElement.querySelectorAll('path');
         reactivePaths = [];
 
         allPaths.forEach(path => {
-            // 色情報の取得
-            const fillAttr = (path.getAttribute('fill') || '').toLowerCase();
-            const computedStyle = window.getComputedStyle(path).fill;
-            
-            // 判定1: 「背景の巨大な四角」かどうか？
+            // 判定: 「背景の巨大な四角」かどうか？
             try {
                 const bbox = path.getBBox();
-                // 画面サイズに近い大きさ(600x600以上)なら背景とみなして消す
+                // 画面サイズに近い大きさなら背景とみなして消す
                 if (bbox.width > 600 && bbox.height > 600) {
                     path.style.display = 'none';
-                    return; // 処理終了
+                    return; 
                 }
-            } catch(e) { /* 計測エラー時は無視 */ }
+            } catch(e) { /* 無視 */ }
 
-            // 判定2: 「黒いパーツ（文字）」かどうか？
-            // 属性が黒、または計算値が黒(rgb(0,0,0))の場合
-            const isBlack = (fillAttr === '#000000' || fillAttr === 'black' || computedStyle === 'rgb(0, 0, 0)');
+            // ここに来たパスはすべて「ロゴ」か「文字」です。
+            
+            // 1. 中抜き文字（P, R）を直す魔法の呪文
+            path.style.fillRule = 'evenodd';
+            path.setAttribute('fill-rule', 'evenodd');
 
-            if (isBlack) {
-                // --- 黒いパーツ（文字）への処理 ---
-                path.style.fill = '#000000';
-                
-                // 【重要】文字の穴（P, Rなど）を抜くための設定
-                path.style.fillRule = 'evenodd'; 
-                // SVG属性としても念のため設定
-                path.setAttribute('fill-rule', 'evenodd');
-
-            } else {
-                // --- それ以外（ロゴ）への処理 ---
-                // アニメーション対象リストに追加
-                reactivePaths.push(path);
-                
-                // クラス付与
-                path.classList.add('glow-target');
-                // ネオンフィルタを適用
-                path.style.filter = 'url(#neon-glow)';
-                // 初期色
-                path.style.fill = '#ffffff';
-            }
+            // 2. 枠線を消して塗りつぶし専用にする
+            path.style.stroke = 'none';
+            
+            // 3. アニメーション対象リストに追加
+            reactivePaths.push(path);
+            
+            // 初期カラー（白）
+            path.style.fill = '#ffffff';
         });
         
-        console.log(`自動検出: 文字パーツ(黒)と、光るパーツ(${reactivePaths.length}個)を選別完了`);
+        console.log(`セットアップ完了: ${reactivePaths.length} 個のパーツを制御します`);
     }
 
     // --- 画面常時オン ---
@@ -1914,11 +1907,10 @@
 
     // --- オーディオ処理 ---
     async function startAudio() {
-        // SVGの補正を実行
-        setupSVG();
+        setupSVG(); // 補正実行
 
         if (reactivePaths.length === 0) {
-            alert('光るパーツが見つかりませんでした。SVGの貼り付けを確認してください。');
+            alert('パーツが見つかりません。SVGを貼り付けてください。');
             return;
         }
 
@@ -1948,8 +1940,14 @@
                 const scale = 1.0 + (bassAverage / 255) * 0.12; 
                 visualizerContainer.style.transform = `scale(${scale})`;
 
-                // 2. 色の変化 (音程ルール適用)
-                // 低音＝青、中音＝紫、高音＝赤 となるようマッピング
+                // 2. 全体の発光 (Glow)
+                // 音量に合わせて光の強さが変わる
+                // 色は時間でゆっくり変化するグラデーション光
+                const timeHue = (Date.now() / 50) % 360; 
+                const glowIntensity = 5 + (bassAverage / 255) * 30;
+                visualizerContainer.style.filter = `drop-shadow(0 0 ${glowIntensity}px hsla(${timeHue}, 80%, 60%, 0.6))`;
+
+                // 3. 各パーツの色 (Dynamic Color)
                 reactivePaths.forEach((path, index) => {
                     const ratio = index / reactivePaths.length; // 0.0 〜 1.0
                     
@@ -1961,10 +1959,10 @@
                     if (val > 255) val = 255;
                     const normalizedVal = val / 255; 
 
-                    // --- 色の決定ルール (Hue Mapping) ---
-                    // ratio 0.0 (先頭パーツ) -> 210度 (青)
-                    // ratio 1.0 (末尾パーツ) -> 360度 (赤)
-                    const hue = 210 + (ratio * 150); 
+                    // --- 色の決定ルール ---
+                    // パスの順番に応じて色を割り当て（音程連動）
+                    // 190(水色/青) 〜 370(赤/オレンジ) まで広く変化
+                    const hue = 190 + (ratio * 180); 
 
                     // 彩度
                     const saturation = 100;
