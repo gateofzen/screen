@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FEELCYCLE Visualizer - Red Boost</title>
+    <title>FEELCYCLE Visualizer - Full Color Peak</title>
     <style>
         body {
             margin: 0;
@@ -41,13 +41,7 @@
 
         path {
             stroke: none !important; 
-            fill-rule: evenodd !important;
-            transition: fill 0.06s ease-out; /* キビキビ動く */
-        }
-
-        /* ロゴパーツ用（初期値） */
-        path.glow-target {
-            fill: #ffffff; 
+            transition: fill 0.05s linear; /* 色の変化をキビキビと */
         }
 
         button {
@@ -1856,47 +1850,51 @@
     const svgElement = document.getElementById('svg');
     const startButton = document.getElementById('startButton');
     
+    // 光らせる対象のリスト
+    let logoPaths = []; // ロゴ（白ベース）
+    let textPaths = []; // 文字（黒ベース）
     let glowGroup = null; 
-    let reactivePaths = []; 
 
     // --- 自動仕分けプログラム ---
     function setupSVG() {
         const allPaths = Array.from(svgElement.querySelectorAll('path'));
         
+        // ロゴ用グループ（強い発光）
         glowGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
-        glowGroup.setAttribute("id", "isolated-glow-group");
-        // 初期の発光状態
-        glowGroup.style.filter = "drop-shadow(0 0 5px rgba(255, 255, 255, 0.5))";
-        glowGroup.style.transition = "filter 0.05s linear";
+        glowGroup.style.transition = "filter 0.05s linear"; 
         svgElement.appendChild(glowGroup);
 
-        reactivePaths = [];
+        logoPaths = [];
+        textPaths = [];
 
         allPaths.forEach(path => {
-            const dAttr = (path.getAttribute('d') || '').trim();
             const fillAttr = (path.getAttribute('fill') || '').toLowerCase();
+            const dAttr = (path.getAttribute('d') || '').trim();
             const parentClass = path.parentElement ? path.parentElement.getAttribute('class') : '';
 
             // 1. 背景削除
-            if (dAttr.startsWith('M 613') || dAttr.startsWith('M 0 0') || dAttr.startsWith('M 613.00 0.00')) {
+            if (dAttr.startsWith('M 613') || dAttr.startsWith('M 0 0')) {
                 path.style.display = 'none'; 
                 return;
             }
 
-            // 2. 光るパーツ（ロゴ）の判定
+            // 2. 光るパーツ（ロゴ）
             // class="reactive-paths" または fill="#fbfffe"
             if ((parentClass && parentClass.includes('reactive-paths')) || fillAttr === '#fbfffe') {
-                path.classList.add('glow-target');
                 glowGroup.appendChild(path);
-                reactivePaths.push(path);
+                logoPaths.push(path);
+                // 初期色：白
+                path.style.fill = '#ffffff'; 
             } 
-            // 3. 文字・その他
+            // 3. 文字など（黒いパーツ）
             else {
+                // こちらも今回は「色が変わる」対象として管理しますが、ベースは黒です
+                textPaths.push(path);
                 path.style.fill = '#000000';
+                path.style.fillRule = 'evenodd'; // 中抜き修正
+                path.setAttribute('fill-rule', 'evenodd');
             }
         });
-        
-        console.log(`セットアップ完了: 光るパーツ ${reactivePaths.length} 個`);
     }
 
     let wakeLock = null;
@@ -1912,8 +1910,8 @@
     async function startAudio() {
         setupSVG(); 
 
-        if (reactivePaths.length === 0) {
-            alert('エラー: ロゴパーツが見つかりません。');
+        if (logoPaths.length === 0 && textPaths.length === 0) {
+            alert('パーツが見つかりません。SVGを貼り付けてください。');
             return;
         }
 
@@ -1933,64 +1931,68 @@
                 requestAnimationFrame(animate);
                 analyser.getByteFrequencyData(dataArray);
 
-                // 低音取得
                 let bassTotal = 0;
                 for(let i = 0; i < 8; i++) bassTotal += dataArray[i];
                 const bassAverage = bassTotal / 8;
                 const normalizedBass = bassAverage / 255;
 
-                // 1. 動き (Pulse)
+                // 1. 動き
                 const scale = 1.0 + normalizedBass * 0.12; 
                 visualizerContainer.style.transform = `scale(${scale})`;
 
-                // 2. 発光エフェクト (Glow)
-                // 時間で色相環を一周するベースカラー
-                const baseHue = (Date.now() / 50) % 360; 
-                
-                // 音が大きいほど強く光る
+                // 2. ロゴ全体の発光 (White -> Colorful)
+                // 光の強さ
                 const glowIntensity = 5 + (Math.pow(normalizedBass, 2) * 50); 
-                // 音が大きいほど光の彩度も上がる
+                // ベースの色相（時間でゆっくり回る）
+                const baseHue = (Date.now() / 50) % 360;
+                // 彩度：音が大きい時だけ色がつく
                 const glowSat = normalizedBass * 100;
                 
                 if (glowGroup) {
                     glowGroup.style.filter = `drop-shadow(0 0 ${glowIntensity}px hsla(${baseHue}, ${glowSat}%, 60%, 0.8))`;
                 }
 
-                // 3. 各パーツの色変化 (More Red!!)
-                reactivePaths.forEach((path, index) => {
-                    const ratio = index / reactivePaths.length; 
+                // 3. ロゴの色変化（★ここを修正：全色対応★）
+                logoPaths.forEach((path, index) => {
+                    const ratio = index / logoPaths.length; 
                     const dataIndex = Math.floor(ratio * (bufferLength * 0.6)); 
                     
-                    // 感度5倍（少しの音でも色が出るように）
-                    let val = dataArray[dataIndex] * 5.0;
+                    let val = dataArray[dataIndex] * 4.0;
                     if (val > 255) val = 255;
                     const normalizedVal = val / 255; 
 
-                    // ★【修正点】色の決定ロジック★
-                    // 180(水色) スタート
-                    // 240(青)
-                    // 300(ピンク/マゼンタ)
-                    // 360(赤) --- ここを通過させるのが重要
-                    // 400(オレンジ/黄) --- ここまで引っ張ることで赤の領域を広げる
-                    const hue = 180 + (ratio * 220); 
+                    // ★色相を全範囲（0〜360）に広げる
+                    // ratio(0~1) * 360 で、パーツごとに異なる色が割り当てられます
+                    // 時間経過も足して、常に色が循環するようにします
+                    const hue = (ratio * 360) + (Date.now() / 100); 
 
-                    // 彩度: 音量に合わせて 0%(白) -> 100%(鮮やか)
-                    // Math.pow(..., 0.5) で、小さな音でもすぐに色が乗るように調整
-                    const saturation = Math.pow(normalizedVal, 0.5) * 100;
+                    // 彩度: 音量連動（小さいと白、大きいと鮮やか）
+                    // 以前より「色がつくタイミング」を早くしました (pow 0.3)
+                    const saturation = Math.pow(normalizedVal, 0.3) * 100;
 
-                    // 明るさ: 
-                    // 音なし: 100% (真っ白)
-                    // 音あり: 60% (色が一番濃く見える)
-                    // 赤色(Hue 340~380付近)の場合は、さらに暗くして赤を目立たせる補正
-                    let targetLightness = 60;
-                    if (hue > 330) targetLightness = 50; // 赤系は少し暗くしたほうが赤く見える
-
-                    const lightness = 100 - (normalizedVal * (100 - targetLightness)); 
+                    // 明るさ: 音量連動（小さいと100%白、大きいと50%原色）
+                    const lightness = 100 - (normalizedVal * 50); 
                     
-                    // 透明度: 常にくっきり
-                    const alpha = 0.9 + (normalizedVal * 0.1);
+                    const alpha = 0.8 + (normalizedVal * 0.2);
 
                     path.style.fill = `hsla(${hue}, ${saturation}%, ${lightness}%, ${alpha})`;
+                });
+
+                // 4. 文字の色変化（既存の「いい感じ」を維持）
+                // ※もし文字が黒のままがいい場合はここを削除してください
+                textPaths.forEach((path, index) => {
+                    // 文字は少し控えめに、低音で赤〜紫に光るイメージ
+                    const val = dataArray[index % 10] * 3.0;
+                    const norm = Math.min(1, val / 255);
+                    if (norm > 0.1) {
+                        const hue = 320 + (norm * 60); // ピンク〜赤
+                        const lit = norm * 60; // 音がないと黒(0%)
+                        path.style.fill = `hsla(${hue}, 80%, ${lit}%, 1)`;
+                        path.style.filter = `drop-shadow(0 0 ${norm * 10}px hsla(${hue}, 100%, 50%, ${norm}))`;
+                    } else {
+                        path.style.fill = '#000000';
+                        path.style.filter = 'none';
+                    }
                 });
             }
             animate();
