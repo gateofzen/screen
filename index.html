@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FEELCYCLE Visualizer - Auto Fix</title>
+    <title>FEELCYCLE Visualizer - Robust Auto Fix</title>
     <style>
         body {
             margin: 0;
@@ -24,20 +24,25 @@
             justify-content: center;
             align-items: center;
             transform-origin: center center;
-            will-change: transform, filter;
-            width: 90vmin; /* 短辺の90% */
+            width: 90vmin;
             height: 90vmin;
             max-width: 95vw;
             max-height: 95vh;
+            will-change: transform, filter;
         }
 
         svg {
             width: 100%;
             height: 100%;
             object-fit: contain;
-            /* ロゴだけが青く光る設定 */
-            filter: drop-shadow(0 0 8px rgba(0, 150, 255, 0.4));
+            /* ロゴ全体の発光（青） */
+            filter: drop-shadow(0 0 8px rgba(0, 150, 255, 0.5));
             transition: filter 0.05s linear;
+        }
+
+        /* SVG内のスタイルを強制的に上書きするための設定 */
+        path {
+            transition: fill 0.1s;
         }
 
         button {
@@ -51,21 +56,14 @@
             color: #fff;
             border: 1px solid rgba(255, 255, 255, 0.5);
             border-radius: 30px;
-            font-weight: normal;
             letter-spacing: 2px;
-            transition: all 0.5s;
-            -webkit-tap-highlight-color: transparent;
-        }
-        button:hover {
-            background: rgba(255, 255, 255, 0.3);
-            border-color: #fff;
         }
     </style>
 </head>
 <body>
 
     <div id="visualizer-container">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.00 0.00 613.00 612.00" id="svg">
+       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.00 0.00 613.00 612.00" id="svg">
       <defs>
         <!-- 中央部分を切り抜くためのマスク定義 -->
         <mask id="centerMask">
@@ -1852,102 +1850,114 @@
     const svgElement = document.getElementById('svg');
     const startButton = document.getElementById('startButton');
 
-    // --- 自動修正機能 ---
-    // ページ読み込み時に、不要な背景（四角い縁）を自動で隠します
-    window.addEventListener('load', () => {
-        // SVG内のすべてのパスを取得
-        const allPaths = svgElement.querySelectorAll('path');
-        
-        // 通常、一番最初のパスが背景の四角形です。
-        // これが「黒色(#000000)」であれば、背景とみなして非表示にします。
-        if (allPaths.length > 0) {
-            const firstPath = allPaths[0];
-            const fill = firstPath.getAttribute('fill');
-            
-            // 黒い背景パスなら非表示にする
-            if (fill === '#000000') {
-                firstPath.style.display = 'none';
-                console.log('背景の黒い四角形を自動検出して非表示にしました。');
-            }
-        }
-    });
+    let reactivePaths = []; // 色を変える対象のリスト
 
-    // --- 画面常時オン (Wake Lock) ---
+    // --- 強力な自動補正機能 ---
+    function setupSVG() {
+        const allPaths = svgElement.querySelectorAll('path');
+        reactivePaths = []; // リスト初期化
+
+        allPaths.forEach(path => {
+            // パスの色を取得（属性または計算されたスタイル）
+            const fillAttr = path.getAttribute('fill') || '';
+            const computedStyle = window.getComputedStyle(path).fill;
+            
+            // 判定基準1: 「背景」かどうか？
+            // バウンディングボックス（描画サイズ）がキャンバス全体(600x600以上)なら背景とみなす
+            try {
+                const bbox = path.getBBox();
+                if (bbox.width > 600 && bbox.height > 600) {
+                    path.style.display = 'none'; // 背景を非表示に
+                    return; // 処理終了
+                }
+            } catch(e) {
+                // getBBoxが失敗する場合（非表示要素など）は無視
+            }
+
+            // 判定基準2: 「光るパーツ」かどうか？
+            // 黒色(#000000, rgb(0,0,0))以外のパスはすべて「光るパーツ」として扱う
+            // または、明示的に白っぽい色(#fbfffe)なら対象にする
+            const isBlack = (fillAttr.toLowerCase() === '#000000' || computedStyle === 'rgb(0, 0, 0)');
+            const isTargetColor = (fillAttr.toLowerCase().includes('fbfffe'));
+
+            // 「黒ではない」または「ターゲット色である」ならリストに追加
+            if (!isBlack || isTargetColor) {
+                reactivePaths.push(path);
+            }
+        });
+
+        console.log(`自動検出完了: 光るパーツ ${reactivePaths.length} 個`);
+    }
+
+    // --- 画面常時オン ---
     let wakeLock = null;
     async function requestWakeLock() {
         if ('wakeLock' in navigator) {
-            try {
-                wakeLock = await navigator.wakeLock.request('screen');
-            } catch (err) { console.error(err); }
+            try { wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
         }
     }
     document.addEventListener('visibilitychange', async () => {
         if (wakeLock !== null && document.visibilityState === 'visible') await requestWakeLock();
     });
 
-    // --- オーディオビジュアライザー ---
+    // --- オーディオ処理 ---
     async function startAudio() {
+        // 最初にSVGを解析・補正
+        setupSVG();
+
+        if (reactivePaths.length === 0) {
+            alert('光るパーツが見つかりませんでした。SVGの貼り付けを確認してください。');
+            return;
+        }
+
         try {
             await requestWakeLock();
-
-            // 音に反応させるターゲット（白いパス #fbfffe）を再取得
-            // ※ペーストされたコードの中から確実に探し出します
-            const reactivePaths = document.querySelectorAll('path[fill="#fbfffe"]');
-
-            if (reactivePaths.length === 0) {
-                alert('エラー: 音に反応するパーツが見つかりません。\nSVGコードが正しく貼り付けられているか確認してください。');
-                return;
-            }
-
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             const audioContext = new (window.AudioContext || window.webkitAudioContext)();
             const analyser = audioContext.createAnalyser();
             
-            analyser.fftSize = 1024; 
+            analyser.fftSize = 1024;
             const bufferLength = analyser.frequencyBinCount;
             const dataArray = new Uint8Array(bufferLength);
-
             const source = audioContext.createMediaStreamSource(stream);
             source.connect(analyser);
 
             function animate() {
                 requestAnimationFrame(animate);
-
                 analyser.getByteFrequencyData(dataArray);
 
-                // 低音取得
+                // 低音 (動き用)
                 let bassTotal = 0;
-                const bassRange = 10;
-                for(let i = 0; i < bassRange; i++) bassTotal += dataArray[i];
-                const bassAverage = bassTotal / bassRange;
+                for(let i = 0; i < 10; i++) bassTotal += dataArray[i];
+                const bassAverage = bassTotal / 10;
 
-                // 1. 拡大縮小（Pulse）
+                // 動き (控えめに)
                 const scale = 1 + (bassAverage / 255) * 0.08; 
                 visualizerContainer.style.transform = `scale(${scale})`;
 
-                // 2. 発光エフェクト（青固定）
-                const glowIntensity = 2 + (bassAverage / 255) * 25; 
+                // 発光 (青固定)
+                const glowIntensity = 2 + (bassAverage / 255) * 25;
                 svgElement.style.filter = `drop-shadow(0 0 ${glowIntensity}px hsla(210, 100%, 60%, 0.6))`;
 
-                // 3. パスの色変化（青 -> ピンク）
+                // 色変化 (青 -> ピンク)
                 reactivePaths.forEach((path, index) => {
                     const ratio = index / reactivePaths.length;
-                    const dataIndex = Math.floor(ratio * (bufferLength * 0.6)); 
+                    const dataIndex = Math.floor(ratio * (bufferLength * 0.6));
                     const value = dataArray[dataIndex] || 0;
-                    
-                    const fixedHue = 220 + (ratio * 80); 
-                    const lightness = 15 + (value / 255) * 50; 
-                    const alpha = 0.4 + (value / 255) * 0.6;   
 
-                    path.setAttribute('fill', `hsla(${fixedHue}, 80%, ${lightness}%, ${alpha})`);
+                    const fixedHue = 220 + (ratio * 80); // 220(青) 〜 300(ピンク)
+                    const lightness = 15 + (value / 255) * 50; 
+                    const alpha = 0.4 + (value / 255) * 0.6;
+
+                    // setAttributeではなくstyleプロパティを直接操作して確実に色を変える
+                    path.style.fill = `hsla(${fixedHue}, 80%, ${lightness}%, ${alpha})`;
                 });
             }
-
             animate();
-
+            
         } catch (error) {
             console.error(error);
-            alert('マイク使用の許可が必要です。');
+            alert('マイク許可が必要です。');
         }
     }
 
