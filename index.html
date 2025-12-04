@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FEELCYCLE Visualizer - Final</title>
+    <title>FEELCYCLE Visualizer - Vivid Colors</title>
     <style>
         body {
             margin: 0;
@@ -29,57 +29,21 @@
             max-width: 95vw;
             max-height: 95vh;
             will-change: transform;
-            transition: transform 0.05s ease-out; /* 滑らかな動き */
+            transition: transform 0.05s ease-out;
         }
 
         svg {
             width: 100%;
             height: 100%;
             object-fit: contain;
-            filter: none !important; /* 全体の発光を禁止 */
+            filter: none !important;
         }
 
-        /* ネオン設定（白いパーツだけがここを参照します） */
+        /* 光るパーツのグループ
+           ここにCSSの drop-shadow を適用することで、
+           パーツの色に合わせて光の色も変わるようになります。
+        */
         #glowing-parts {
-            filter: url(#neon-glow);
-        }
-        #glowing-parts path {
-            transition: fill 0.08s linear;
-            fill: #ffffff; /* 初期色 */
-        }
-
-        button {
-            position: absolute;
-            bottom: 5vh;
-            z-index: 100;
-            padding: 15px 30px;
-            font-size: 1.2rem;
-            cursor: pointer;
-            background: rgba(255, 255, 255, 0.1);
-            color: #fff;
-            border: 1px solid rgba(255, 255, 255, 0.5);
-            border-radius: 30px;
-            letter-spacing: 2px;
-            -webkit-tap-highlight-color: transparent;
-        }
-    </style>
-</head>
-<body>
-
-    <div id="visualizer-container">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.00 0.00 613.00 612.00" id="svg">
-            
-            <defs>
-                <filter id="neon-glow" x="-50%" y="-50%" width="200%" height="200%">
-                    <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur" />
-                    <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0  0 0.6 0 0 0  0 0 1 0 0  0 0 0 1 0" result="blueBlur" />
-                    <feMerge>
-                        <feMergeNode in="blueBlur" />
-                        <feMergeNode in="SourceGraphic" />
-                    </feMerge>
-                </filter>
-            </defs>
-
             <g id="static-parts" fill="#000000">
 <path fill="black" d="
             M 132.62 242.57
@@ -1023,9 +987,10 @@
           Z"
         />                
                 </g>
-            <g id="glowing-parts">
-<g class="reactive-paths">
-        <path fill="#fbfffe" d="
+        }
+
+        #glowing-parts path {
+            <path fill="#fbfffe" d="
           M 309.94 60.97
           Q 345.02 60.64 375.72 72.98
           Q 446.92 101.58 476.61 171.34
@@ -1588,16 +1553,44 @@
           Z"
         />
       </g>
-    </svg>
+        }
+
+        button {
+            position: absolute;
+            bottom: 5vh;
+            z-index: 100;
+            padding: 15px 30px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            border-radius: 30px;
+            letter-spacing: 2px;
+            -webkit-tap-highlight-color: transparent;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="visualizer-container">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.00 0.00 613.00 612.00" id="svg">
+            
+            <g id="static-parts" fill="#000000">
+                </g>
+
+            <g id="glowing-parts">
+                </g>
+
+        </svg>
     </div>
 
     <button id="startButton">SYSTEM START</button>
 
     <script>
     const visualizerContainer = document.getElementById('visualizer-container');
+    const glowingGroup = document.getElementById('glowing-parts');
     const startButton = document.getElementById('startButton');
-
-    // 光るパーツを取得
     let reactivePaths = [];
 
     // 画面常時オン
@@ -1612,9 +1605,7 @@
     });
 
     async function startAudio() {
-        // glowing-partsの中にあるパスだけを操作対象にする
         reactivePaths = document.querySelectorAll('#glowing-parts path');
-
         if (reactivePaths.length === 0) {
             alert('エラー: 【場所2】に白いパーツが貼り付けられていません。');
             return;
@@ -1636,32 +1627,44 @@
                 requestAnimationFrame(animate);
                 analyser.getByteFrequencyData(dataArray);
 
-                // 低音（キック）の取得
+                // 低音取得
                 let bassTotal = 0;
                 for(let i = 0; i < 8; i++) bassTotal += dataArray[i];
                 const bassAverage = bassTotal / 8;
 
                 // 1. 動き (Pulse)
-                // 音量に合わせて拡大縮小。0.15倍の強度で動く。
                 const scale = 1.0 + (bassAverage / 255) * 0.15; 
                 visualizerContainer.style.transform = `scale(${scale})`;
 
-                // 2. 色の変化 (Dynamic Color)
+                // 2. 発光エフェクト (Glow)
+                // 青固定をやめ、時間経過で「青→紫→赤」とゆっくり変化するグラデーション光にします
+                const timeHue = (Date.now() / 50) % 360; 
+                const glowIntensity = 5 + (bassAverage / 255) * 30; // 音に合わせて光が強くなる
+                
+                // 特定のグループ(glowing-parts)だけにドロップシャドウをかける
+                // これにより、黒いパーツ（static-parts）は光りません
+                glowingGroup.style.filter = `drop-shadow(0 0 ${glowIntensity}px hsla(${timeHue}, 80%, 60%, 0.6))`;
+
+
+                // 3. 色の変化 (Dynamic Color - Wider Range)
                 reactivePaths.forEach((path, index) => {
                     const ratio = index / reactivePaths.length;
                     const dataIndex = Math.floor(ratio * (bufferLength * 0.7)); 
                     
-                    // 音量を2倍ブーストして感度を上げる
                     let val = dataArray[dataIndex] * 2.0;
                     if (val > 255) val = 255;
                     const normalizedVal = val / 255; 
 
-                    // 青(215) 〜 ピンク(315) のグラデーション
-                    const hue = 215 + (ratio * 100);
-                    const saturation = 90;
-                    // 音がない時は暗く(25%)、ある時は明るく(85%)
-                    const lightness = 25 + (normalizedVal * 60);
-                    const alpha = 0.5 + (normalizedVal * 0.5);
+                    // 【変更点】色の範囲を大幅に拡大
+                    // スタート: 190 (水色/青)
+                    // エンド:   370 (赤を超えて少しオレンジまで)
+                    // これにより、青 -> 紫 -> ピンク -> 赤 -> 朱色 まで変化します
+                    const hue = 190 + (ratio * 180);
+
+                    // 彩度・輝度
+                    const saturation = 100; // 最大限鮮やかに
+                    const lightness = 25 + (normalizedVal * 65); // 25%〜90%まで明るく
+                    const alpha = 0.6 + (normalizedVal * 0.4);
 
                     path.style.fill = `hsla(${hue}, ${saturation}%, ${lightness}%, ${alpha})`;
                 });
