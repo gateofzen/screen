@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FEELCYCLE Visualizer - Isolated Glow</title>
+    <title>FEELCYCLE Visualizer - White Base & Colorful Peak</title>
     <style>
         body {
             margin: 0;
@@ -36,12 +36,12 @@
             width: 100%;
             height: 100%;
             object-fit: contain;
-            filter: none !important; /* SVG全体の発光は禁止 */
+            filter: none !important;
         }
 
         path {
-            stroke: none !important; /* 縁取り線を消去 */
-            transition: fill 0.06s ease-out; /* 色変化 */
+            stroke: none !important; 
+            transition: fill 0.06s ease-out; 
         }
 
         button {
@@ -1851,16 +1851,14 @@
     const startButton = document.getElementById('startButton');
     
     let reactivePaths = []; 
-    let glowGroup = null; // 光るパーツ専用のグループ
+    let glowGroup = null; 
 
     // --- 自動仕分けプログラム ---
     function setupSVG() {
         const allPaths = Array.from(svgElement.querySelectorAll('path'));
         
-        // 光るパーツを隔離するための新しいグループを作成
         glowGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
         glowGroup.setAttribute("id", "isolated-glow-group");
-        // このグループだけにドロップシャドウ（発光）をかける
         glowGroup.style.transition = "filter 0.05s linear"; 
         svgElement.appendChild(glowGroup);
 
@@ -1871,8 +1869,6 @@
             const dAttr = (path.getAttribute('d') || '').trim();
 
             // 1. 背景削除
-            // 画面サイズ(613x612)に近い巨大な四角形を検知して非表示に
-            // ※念のため d属性の開始文字でも判定
             try {
                 const bbox = path.getBBox();
                 if ((bbox.width > 600 && bbox.height > 600) || dAttr.startsWith('M 613')) {
@@ -1887,26 +1883,22 @@
             }
 
             // 2. 光るパーツ（ロゴ）の隔離
-            // 元コードで「#fbfffe」だったパーツを見つけたら...
             if (fillAttr === '#fbfffe') {
-                // ★ここがポイント：光るパーツを「glowGroup」へ移動させる
                 glowGroup.appendChild(path);
                 reactivePaths.push(path);
-                path.style.fill = '#222222'; // 初期色
+                // ★初期色を「白」に変更
+                path.style.fill = '#ffffff'; 
             } 
             // 3. 静止パーツ（文字・黒模様）
             else {
-                // 黒いパーツはそのままの場所に残す
                 path.style.fill = '#000000'; 
-                path.style.fillRule = 'evenodd'; // 中抜き修正
+                path.style.fillRule = 'evenodd';
                 path.setAttribute('fill-rule', 'evenodd');
                 path.style.filter = 'none';
             }
         });
-        console.log(`セットアップ完了: ${reactivePaths.length}個のパーツを隔離して光らせます`);
     }
 
-    // --- 画面常時オン ---
     let wakeLock = null;
     async function requestWakeLock() {
         if ('wakeLock' in navigator) {
@@ -1922,7 +1914,7 @@
         setupSVG(); 
 
         if (reactivePaths.length === 0) {
-            alert('光るパーツが見つかりません。\n貼り付けたコードを確認してください。');
+            alert('光るパーツが見つかりません。SVGを貼り付けてください。');
             return;
         }
 
@@ -1942,31 +1934,29 @@
                 requestAnimationFrame(animate);
                 analyser.getByteFrequencyData(dataArray);
 
-                // 低音取得
                 let bassTotal = 0;
                 for(let i = 0; i < 8; i++) bassTotal += dataArray[i];
                 const bassAverage = bassTotal / 8;
+                const normalizedBass = bassAverage / 255;
 
                 // 1. 動き (Pulse)
-                const scale = 1.0 + (bassAverage / 255) * 0.12; 
+                const scale = 1.0 + normalizedBass * 0.12; 
                 visualizerContainer.style.transform = `scale(${scale})`;
 
-                // 2. 発光エフェクト (Glow)
-                // 隔離されたグループ全体に光をかける（四角い縁はここに含まれないので光らない）
-                const timeHue = (Date.now() / 50) % 360; 
+                // 2. 発光エフェクト (Glow) - グループ全体
+                // 音量に合わせて光の強さを変える
+                const glowIntensity = 5 + (Math.pow(normalizedBass, 2) * 50); 
                 
-                // 光の強さ計算：音量(0-1)の2乗を使うことで、ピーク時に急激に光が強くなる
-                const normalizedBass = bassAverage / 255;
-                const glowIntensity = 5 + (Math.pow(normalizedBass, 2) * 50); // 最大55pxの強い光
-                
-                // 光の色も、音が強いときは白っぽく(S彩度を下げる)してフラッシュ感を出す
-                const glowSat = 80 - (normalizedBass * 30); // 80% -> 50%
+                // ★光の色も音量で変える
+                // 音が小さい時は白っぽい光、大きい時はカラフルな光
+                const baseHue = (Date.now() / 50) % 360; // 時間でゆっくり変わるベース色
+                const glowSat = normalizedBass * 100; // 音量で彩度を上げる(0%→100%)
                 
                 if (glowGroup) {
-                    glowGroup.style.filter = `drop-shadow(0 0 ${glowIntensity}px hsla(${timeHue}, ${glowSat}%, 60%, 0.8))`;
+                    glowGroup.style.filter = `drop-shadow(0 0 ${glowIntensity}px hsla(${baseHue}, ${glowSat}%, 60%, 0.8))`;
                 }
 
-                // 3. 各パーツの色変化 (Flashy Logic)
+                // 3. 各パーツの色変化 (White Base -> Colorful Peak)
                 reactivePaths.forEach((path, index) => {
                     const ratio = index / reactivePaths.length; 
                     const dataIndex = Math.floor(ratio * (bufferLength * 0.6)); 
@@ -1976,19 +1966,22 @@
                     if (val > 255) val = 255;
                     const normalizedVal = val / 255; 
 
-                    // 色相: 水色〜赤
-                    const hue = 180 + (ratio * 200); 
-
-                    // 明るさ計算 (Flash Logic)
-                    // 音が小さい時: 30% (しっかり色が見える暗さ)
-                    // 音が大きい時: 指数関数的に 100% (白) に近づく
-                    // Math.pow(val, 2.5) を使うことで、本当に強い音の時だけ「白」になる
-                    const lightness = 30 + (Math.pow(normalizedVal, 2.5) * 70); 
+                    // ★色の決定ロジックを刷新★
                     
-                    // 透明度
+                    // 色相: 音程に合わせて 青(200) → 赤紫(320)
+                    const hue = 200 + (ratio * 120); 
+
+                    // 彩度: 音量に合わせて 0%(白) → 100%(鮮やか)
+                    // Math.powを使うことで、音が小さい時は白を維持しやすくする
+                    const saturation = Math.pow(normalizedVal, 1.5) * 100;
+
+                    // 明るさ: 常に明るめ(90%〜100%)をキープして「白っぽさ」を出す
+                    const lightness = 90 + (normalizedVal * 10); 
+                    
+                    // 透明度: 0.8〜1.0
                     const alpha = 0.8 + (normalizedVal * 0.2);
 
-                    path.style.fill = `hsla(${hue}, 100%, ${lightness}%, ${alpha})`;
+                    path.style.fill = `hsla(${hue}, ${saturation}%, ${lightness}%, ${alpha})`;
                 });
             }
             animate();
