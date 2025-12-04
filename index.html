@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FEELCYCLE Visualizer - Rich Colors</title>
+    <title>FEELCYCLE Visualizer - White Flash</title>
     <style>
         body {
             margin: 0;
@@ -41,7 +41,8 @@
 
         path {
             stroke: none !important; 
-            transition: fill 0.08s ease-out; /* 色変化を少しリッチに */
+            /* 色変化を少し早めて、点滅感（フラッシュ）を出しやすくする */
+            transition: fill 0.06s ease-out; 
         }
 
         button {
@@ -1851,7 +1852,6 @@
     const startButton = document.getElementById('startButton');
     let reactivePaths = []; 
 
-    // --- 自動修正プログラム ---
     function setupSVG() {
         const allPaths = svgElement.querySelectorAll('path');
         reactivePaths = [];
@@ -1860,28 +1860,27 @@
             const fillAttr = (path.getAttribute('fill') || '').toLowerCase();
             const dAttr = (path.getAttribute('d') || '').trim();
 
-            // 1. 背景削除 (613x612サイズの四角形パスを検知)
+            // 背景削除
             if (dAttr.startsWith('M 613.00 0.00') || dAttr.startsWith('M 613 0')) {
                 path.style.display = 'none'; 
                 return;
             }
 
-            // 2. 光るパーツ（ロゴ）の特定
+            // 光るパーツ（ロゴ）
             if (fillAttr === '#fbfffe') {
                 reactivePaths.push(path);
-                path.style.fill = '#222222'; // 初期状態は暗くしておく
+                path.style.fill = '#222222'; 
             } 
-            // 3. 静止パーツ（文字・黒模様）
+            // 静止パーツ（文字）
             else {
                 path.style.fill = '#000000'; 
-                path.style.fillRule = 'evenodd'; // 文字の中抜き修正
+                path.style.fillRule = 'evenodd';
                 path.setAttribute('fill-rule', 'evenodd');
                 path.style.filter = 'none';
             }
         });
     }
 
-    // --- 画面常時オン ---
     let wakeLock = null;
     async function requestWakeLock() {
         if ('wakeLock' in navigator) {
@@ -1892,12 +1891,11 @@
         if (wakeLock !== null && document.visibilityState === 'visible') await requestWakeLock();
     });
 
-    // --- オーディオ処理 ---
     async function startAudio() {
         setupSVG(); 
 
         if (reactivePaths.length === 0) {
-            alert('光るパーツが見つかりません。\n貼り付けるSVGコードに fill="#fbfffe" が含まれているか確認してください。');
+            alert('パーツが見つかりません。SVGを貼り付けてください。');
             return;
         }
 
@@ -1917,50 +1915,51 @@
                 requestAnimationFrame(animate);
                 analyser.getByteFrequencyData(dataArray);
 
-                // 低音取得
                 let bassTotal = 0;
                 for(let i = 0; i < 8; i++) bassTotal += dataArray[i];
                 const bassAverage = bassTotal / 8;
 
-                // 1. 動き (Pulse)
-                // 低音に合わせて拡大縮小
+                // 動き (Pulse)
                 const scale = 1.0 + (bassAverage / 255) * 0.12; 
                 visualizerContainer.style.transform = `scale(${scale})`;
 
-                // 2. 各パーツの色変化 (Vivid & Deep)
+                // 全体の発光 (Glow)
+                const timeHue = (Date.now() / 50) % 360; 
+                const glowIntensity = 5 + (bassAverage / 255) * 30;
+                visualizerContainer.style.filter = `drop-shadow(0 0 ${glowIntensity}px hsla(${timeHue}, 80%, 60%, 0.6))`;
+
+                // 色の変化 (Flash Logic)
                 reactivePaths.forEach((path, index) => {
                     const ratio = index / reactivePaths.length; 
                     const dataIndex = Math.floor(ratio * (bufferLength * 0.6)); 
                     
-                    // 感度は高めに（4倍）設定しつつ、上限張り付きを防ぐ
-                    let val = dataArray[dataIndex] * 4.0;
+                    // 【調整1】感度を「3.5倍」に設定
+                    // 5倍だと常に白くなってしまうため、少し下げて「ピーク時だけ白」になる余裕を作りました
+                    let val = dataArray[dataIndex] * 3.5;
                     if (val > 255) val = 255;
                     const normalizedVal = val / 255; 
 
-                    // --- 色の決定ルール（変更点） ---
-                    // 範囲拡大: 180(水色) 〜 380(赤〜オレンジ)
-                    // 音程による色の違いを明確にします
+                    // 色相: 水色〜赤
                     const hue = 180 + (ratio * 200); 
 
-                    // --- 明るさの調整（重要） ---
-                    // 白飛びさせないため、最大でも「70%」程度に抑えるのがコツです
-                    // 音なし: 30% (深い色)
-                    // 音最大: 70% (鮮やかな発光色) ※100%にすると白になります
-                    const lightness = 30 + (normalizedVal * 40);
+                    // 【調整2】明るさの計算を「指数関数的」に変更
+                    // Math.pow(x, 1.5) を使うことで、中くらいの音では「鮮やかな色(60-70%)」に留まり、
+                    // 本当に強い音(ピーク)の時だけ急激に「白(95-100%)」に近づくカーブを描きます。
+                    const lightness = 25 + (Math.pow(normalizedVal, 1.5) * 75); 
                     
-                    // 彩度はMAX
+                    // 彩度
                     const saturation = 100;
 
-                    // 透明度: 音に合わせて濃くする
+                    // 透明度
                     const alpha = 0.8 + (normalizedVal * 0.2);
 
                     path.style.fill = `hsla(${hue}, ${saturation}%, ${lightness}%, ${alpha})`;
                     
-                    // 個別の光（Glow）
-                    // 輝度を抑えた分、ドロップシャドウで「光ってる感」を補強
-                    // 影の色は少し明るめ(Lightness 60%)にして発光感を出す
+                    // 個別の光
                     const glowSize = 2 + (normalizedVal * 15);
-                    path.style.filter = `drop-shadow(0 0 ${glowSize}px hsla(${hue}, 100%, 60%, 0.9))`;
+                    // 光の色も、本体が白に近づいたら白っぽくする
+                    const glowLightness = 50 + (normalizedVal * 40);
+                    path.style.filter = `drop-shadow(0 0 ${glowSize}px hsla(${hue}, 100%, ${glowLightness}%, 0.9))`;
                 });
             }
             animate();
