@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FEELCYCLE Visualizer - Dynamic & No Border</title>
+    <title>FEELCYCLE Visualizer - Final</title>
     <style>
         body {
             margin: 0;
@@ -28,22 +28,24 @@
             height: 90vmin;
             max-width: 95vw;
             max-height: 95vh;
-            will-change: transform; /* filterはここにはかけない */
+            will-change: transform;
+            transition: transform 0.05s ease-out; /* 滑らかな動き */
         }
 
         svg {
             width: 100%;
             height: 100%;
             object-fit: contain;
-            /* SVG全体へのフィルターは廃止（縁光り防止の決定打） */
-            filter: none !important; 
+            filter: none !important; /* 全体の発光を禁止 */
         }
 
-        /* プログラムで「光るパーツ」と認定されたものだけにこのクラスがつきます */
-        .glow-target {
-            /* パーツ個別にドロップシャドウをかける */
-            /* filter: drop-shadow(...) はJSで動的に制御します */
-            transition: fill 0.05s linear; /* 色変化をキビキビさせる */
+        /* ネオン設定（白いパーツだけがここを参照します） */
+        #glowing-parts {
+            filter: url(#neon-glow);
+        }
+        #glowing-parts path {
+            transition: fill 0.08s linear;
+            fill: #ffffff; /* 初期色 */
         }
 
         button {
@@ -66,13 +68,20 @@
 
     <div id="visualizer-container">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.00 0.00 613.00 612.00" id="svg">
-      <defs>
-        <!-- 中央部分を切り抜くためのマスク定義 -->
-        <mask id="centerMask">
-          <!-- 白で全体を塗る -->
-          <rect x="0" y="0" width="613" height="612" fill="white"/>
-          <!-- 中央の円形部分を黒で切り抜く -->
-          <path fill="black" d="
+            
+            <defs>
+                <filter id="neon-glow" x="-50%" y="-50%" width="200%" height="200%">
+                    <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur" />
+                    <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0  0 0.6 0 0 0  0 0 1 0 0  0 0 0 1 0" result="blueBlur" />
+                    <feMerge>
+                        <feMergeNode in="blueBlur" />
+                        <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                </filter>
+            </defs>
+
+            <g id="static-parts" fill="#000000">
+<path fill="black" d="
             M 132.62 242.57
             Q 132.96 278.23 146.66 310.43
             Q 176.34 380.18 247.54 408.79
@@ -1012,9 +1021,10 @@
           L 352.89 541.17
           A 1.31 1.31 0.0 0 0 351.57 542.47
           Z"
-        />
-        <!-- 音に反応する白色のパスをclass付きで配置 -->
-        <g class="reactive-paths">
+        />                
+                </g>
+            <g id="glowing-parts">
+<g class="reactive-paths">
         <path fill="#fbfffe" d="
           M 309.94 60.97
           Q 345.02 60.64 375.72 72.98
@@ -1578,7 +1588,6 @@
           Z"
         />
       </g>
-        </g>
     </svg>
     </div>
 
@@ -1586,48 +1595,12 @@
 
     <script>
     const visualizerContainer = document.getElementById('visualizer-container');
-    const svgElement = document.getElementById('svg');
     const startButton = document.getElementById('startButton');
 
+    // 光るパーツを取得
     let reactivePaths = [];
 
-    // --- 初期セットアップ: 光るパーツの選別 ---
-    function setupSVG() {
-        const allPaths = svgElement.querySelectorAll('path');
-        reactivePaths = [];
-
-        allPaths.forEach(path => {
-            const fillAttr = (path.getAttribute('fill') || '').toLowerCase();
-            const computedFill = window.getComputedStyle(path).fill;
-
-            // 判定: 「黒色」のパスは背景か模様なので無視（非表示にはしないが、操作対象リストに入れない）
-            // 明示的に黒(#000000) または 計算値がrgb(0,0,0)の場合
-            const isBlack = (fillAttr === '#000000' || computedFill === 'rgb(0, 0, 0)');
-            
-            // 判定: 「白色系」のパスだけをリストに入れる
-            // 元のコードは #fbfffe ですが、白っぽければ対象にします
-            if (!isBlack) {
-                // クラスを付与してCSSで管理しやすくする
-                path.classList.add('glow-target');
-                reactivePaths.push(path);
-                
-                // 初期カラー（真っ白にしておく）
-                path.style.fill = '#ffffff';
-            } else {
-                // 黒い背景パス（画面全体を覆うもの）は邪魔なので消してしまう
-                // サイズ判定で「巨大な黒」なら消す
-                try {
-                    const bbox = path.getBBox();
-                    if (bbox.width > 600) {
-                        path.style.display = 'none';
-                    }
-                } catch(e) {}
-            }
-        });
-        console.log(`制御対象パーツ数: ${reactivePaths.length}`);
-    }
-
-    // --- 画面常時オン ---
+    // 画面常時オン
     let wakeLock = null;
     async function requestWakeLock() {
         if ('wakeLock' in navigator) {
@@ -1638,12 +1611,12 @@
         if (wakeLock !== null && document.visibilityState === 'visible') await requestWakeLock();
     });
 
-    // --- オーディオ処理 ---
     async function startAudio() {
-        setupSVG(); // ここでパーツ選別実行
+        // glowing-partsの中にあるパスだけを操作対象にする
+        reactivePaths = document.querySelectorAll('#glowing-parts path');
 
         if (reactivePaths.length === 0) {
-            alert('光るパーツが見つかりません。SVG貼り付けを確認してください。');
+            alert('エラー: 【場所2】に白いパーツが貼り付けられていません。');
             return;
         }
 
@@ -1653,7 +1626,7 @@
             const audioContext = new (window.AudioContext || window.webkitAudioContext)();
             const analyser = audioContext.createAnalyser();
             
-            analyser.fftSize = 256; // サイズを小さくして反応速度を上げる
+            analyser.fftSize = 512; 
             const bufferLength = analyser.frequencyBinCount;
             const dataArray = new Uint8Array(bufferLength);
             const source = audioContext.createMediaStreamSource(stream);
@@ -1663,67 +1636,34 @@
                 requestAnimationFrame(animate);
                 analyser.getByteFrequencyData(dataArray);
 
-                // 低音取得
+                // 低音（キック）の取得
                 let bassTotal = 0;
-                // 低音域を広めに取る
-                for(let i = 0; i < 15; i++) bassTotal += dataArray[i];
-                const bassAverage = bassTotal / 15;
+                for(let i = 0; i < 8; i++) bassTotal += dataArray[i];
+                const bassAverage = bassTotal / 8;
 
-                // --- 1. 動き (Pulse) ---
-                // 閾値を超えたら「ドン」と動くようにメリハリをつける
-                let scale = 1.0;
-                if (bassAverage > 100) { 
-                    scale = 1 + ((bassAverage - 100) / 155) * 0.12; // 最大1.12倍
-                }
+                // 1. 動き (Pulse)
+                // 音量に合わせて拡大縮小。0.15倍の強度で動く。
+                const scale = 1.0 + (bassAverage / 255) * 0.15; 
                 visualizerContainer.style.transform = `scale(${scale})`;
 
-                // --- 2. ダイナミックな計算 ---
-                // 音量平均
-                let volTotal = 0;
-                for(let i=0; i<bufferLength; i++) volTotal += dataArray[i];
-                const volAverage = volTotal / bufferLength;
-                
-                // 感度ブースト (音量を1.8倍して評価、最大255)
-                const boostedVol = Math.min(255, volAverage * 1.8);
-                const boostedBass = Math.min(255, bassAverage * 1.8);
-
-                // --- 3. 発光 (Glow) ---
-                // パーツ個別に影をつけるのではなく、コンテナ全体にかけるのではなく、
-                // 「光るパーツ群」に対してJSで動的にstyleを当てるのは重いので、
-                // 今回は「親のSVG」ではなく「visualizer-container」にfilterをかける
-                // ただし黒背景は消しているので縁は光らないはず
-                
-                const glowSize = 5 + (boostedBass / 255) * 30; // 5px〜35px
-                const glowOpacity = 0.5 + (boostedBass / 255) * 0.5; // 明るく
-                // 色は青固定
-                visualizerContainer.style.filter = `drop-shadow(0 0 ${glowSize}px hsla(210, 100%, 60%, ${glowOpacity}))`;
-
-
-                // --- 4. パスの色変化 (Dynamic Color) ---
+                // 2. 色の変化 (Dynamic Color)
                 reactivePaths.forEach((path, index) => {
                     const ratio = index / reactivePaths.length;
-                    // データ参照位置を分散させる
-                    const dataIndex = Math.floor(ratio * (bufferLength - 1));
+                    const dataIndex = Math.floor(ratio * (bufferLength * 0.7)); 
                     
-                    // 個別の音量を取得し、さらにブースト
-                    let val = dataArray[dataIndex] * 2.0; // 感度2倍
+                    // 音量を2倍ブーストして感度を上げる
+                    let val = dataArray[dataIndex] * 2.0;
                     if (val > 255) val = 255;
+                    const normalizedVal = val / 255; 
 
-                    // 色相: 低音パーツ=青(220) 〜 高音パーツ=ピンク(300)
-                    const hue = 220 + (ratio * 80);
-                    
-                    // 彩度: 常に鮮やか
+                    // 青(215) 〜 ピンク(315) のグラデーション
+                    const hue = 215 + (ratio * 100);
                     const saturation = 90;
-                    
-                    // 輝度: 音がない時は暗め(20%)、音がある時は爆発的に明るく(90%)
-                    // パワー乗数を使って「音がないときは暗く、あるとき急に明るく」する
-                    const normalizedVal = val / 255; // 0.0 ~ 1.0
-                    const dynamicLightness = 20 + (Math.pow(normalizedVal, 1.5) * 70);
+                    // 音がない時は暗く(25%)、ある時は明るく(85%)
+                    const lightness = 25 + (normalizedVal * 60);
+                    const alpha = 0.5 + (normalizedVal * 0.5);
 
-                    // 透明度: 常に不透明に近くして存在感を出す
-                    const alpha = 0.8 + (normalizedVal * 0.2);
-
-                    path.style.fill = `hsla(${hue}, ${saturation}%, ${dynamicLightness}%, ${alpha})`;
+                    path.style.fill = `hsla(${hue}, ${saturation}%, ${lightness}%, ${alpha})`;
                 });
             }
             animate();
