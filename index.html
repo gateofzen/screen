@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FEELCYCLE Visualizer - Clean & Vivid</title>
+    <title>FEELCYCLE Visualizer - Strict Fix</title>
     <style>
         body {
             margin: 0;
@@ -36,20 +36,14 @@
             width: 100%;
             height: 100%;
             object-fit: contain;
+            /* 全体フィルタはOFF（縁光り防止） */
             filter: none !important;
         }
 
-        /* 【重要】すべてのパスの「枠線」を強制的に消します。
-           これにより「白い縁」がなくなり、中身の色だけが綺麗に見えます。 */
+        /* パスの基本設定 */
         path {
-            stroke: none !important; 
-            stroke-width: 0 !important;
+            stroke: none !important; /* 縁取り線は強制削除 */
             transition: fill 0.05s linear; /* 色変化をスムーズに */
-        }
-
-        /* 光るエフェクトのコンテナ */
-        #visualizer-container.glowing {
-            /* JSで動的にフィルタがかかります */
         }
 
         button {
@@ -71,7 +65,7 @@
 <body>
 
     <div id="visualizer-container">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.00 0.00 613.00 612.00" id="svg">
+       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.00 0.00 613.00 612.00" id="svg">
       <defs>
         <!-- 中央部分を切り抜くためのマスク定義 -->
         <mask id="centerMask">
@@ -1859,39 +1853,43 @@
     const startButton = document.getElementById('startButton');
     let reactivePaths = []; 
 
-    // --- 自動補正セットアップ ---
+    // --- 厳密な自動修正プログラム ---
     function setupSVG() {
         const allPaths = svgElement.querySelectorAll('path');
         reactivePaths = [];
 
         allPaths.forEach(path => {
-            // 判定: 「背景の巨大な四角」かどうか？
-            try {
-                const bbox = path.getBBox();
-                // 画面サイズに近い大きさなら背景とみなして消す
-                if (bbox.width > 600 && bbox.height > 600) {
-                    path.style.display = 'none';
-                    return; 
-                }
-            } catch(e) { /* 無視 */ }
+            // パスの色と形状データを取得
+            const fillAttr = (path.getAttribute('fill') || '').toLowerCase();
+            const dAttr = (path.getAttribute('d') || '').trim();
 
-            // ここに来たパスはすべて「ロゴ」か「文字」です。
-            
-            // 1. 中抜き文字（P, R）を直す魔法の呪文
-            path.style.fillRule = 'evenodd';
-            path.setAttribute('fill-rule', 'evenodd');
+            // 1. 【背景削除】
+            // 背景用の四角形パスは "M 613.00 0.00" という座標で始まる特徴があります。
+            // これに一致したら「背景」とみなして削除します。
+            if (dAttr.startsWith('M 613.00 0.00') || dAttr.startsWith('M 613 0')) {
+                path.style.display = 'none'; 
+                return;
+            }
 
-            // 2. 枠線を消して塗りつぶし専用にする
-            path.style.stroke = 'none';
-            
-            // 3. アニメーション対象リストに追加
-            reactivePaths.push(path);
-            
-            // 初期カラー（白）
-            path.style.fill = '#ffffff';
+            // 2. 【光るパーツ（ロゴ）の特定】
+            // 元コードで「#fbfffe」という色が指定されていたパーツだけを光らせます。
+            if (fillAttr === '#fbfffe') {
+                reactivePaths.push(path);
+                path.style.fill = '#ffffff'; // 初期色は白
+                // 個別にドロップシャドウをかける（これで縁は光らず、ロゴだけ光る）
+                path.style.filter = 'drop-shadow(0 0 5px rgba(255, 255, 255, 0.5))';
+            } 
+            // 3. 【静止パーツ（文字・黒模様）】
+            // それ以外（黒色 #000000 など）は全てここに来ます。
+            else {
+                path.style.fill = '#000000'; // 確実に黒にする
+                path.style.fillRule = 'evenodd'; // ★PやRの穴を抜く呪文
+                path.setAttribute('fill-rule', 'evenodd'); // 念のため属性もセット
+                path.style.filter = 'none'; // 光らせない
+            }
         });
         
-        console.log(`セットアップ完了: ${reactivePaths.length} 個のパーツを制御します`);
+        console.log(`セットアップ完了: 光るパーツ ${reactivePaths.length} 個を検出`);
     }
 
     // --- 画面常時オン ---
@@ -1907,10 +1905,10 @@
 
     // --- オーディオ処理 ---
     async function startAudio() {
-        setupSVG(); // 補正実行
+        setupSVG(); // 修正実行
 
         if (reactivePaths.length === 0) {
-            alert('パーツが見つかりません。SVGを貼り付けてください。');
+            alert('光るパーツが見つかりません。\n貼り付けるSVGコードに fill="#fbfffe" が含まれているか確認してください。');
             return;
         }
 
@@ -1940,14 +1938,12 @@
                 const scale = 1.0 + (bassAverage / 255) * 0.12; 
                 visualizerContainer.style.transform = `scale(${scale})`;
 
-                // 2. 全体の発光 (Glow)
-                // 音量に合わせて光の強さが変わる
-                // 色は時間でゆっくり変化するグラデーション光
-                const timeHue = (Date.now() / 50) % 360; 
-                const glowIntensity = 5 + (bassAverage / 255) * 30;
-                visualizerContainer.style.filter = `drop-shadow(0 0 ${glowIntensity}px hsla(${timeHue}, 80%, 60%, 0.6))`;
+                // 2. 音量の全体平均
+                let volTotal = 0;
+                for(let i=0; i<bufferLength; i++) volTotal += dataArray[i];
+                const volAverage = volTotal / bufferLength;
 
-                // 3. 各パーツの色 (Dynamic Color)
+                // 3. 各パーツの色変化 (音程連動)
                 reactivePaths.forEach((path, index) => {
                     const ratio = index / reactivePaths.length; // 0.0 〜 1.0
                     
@@ -1960,20 +1956,23 @@
                     const normalizedVal = val / 255; 
 
                     // --- 色の決定ルール ---
-                    // パスの順番に応じて色を割り当て（音程連動）
-                    // 190(水色/青) 〜 370(赤/オレンジ) まで広く変化
-                    const hue = 190 + (ratio * 180); 
+                    // 低音パーツほど「青(200)」
+                    // 高音パーツほど「赤(360)」
+                    // ランダムではなく固定ルールなので、音程に合わせて色がうねります
+                    const hue = 200 + (ratio * 160); 
 
-                    // 彩度
-                    const saturation = 100;
-                    
-                    // 輝度: 音がないときは暗く(20%)、音が出ると明るく(85%)
-                    const lightness = 20 + (normalizedVal * 65);
+                    // 輝度: 音がないときは暗く(20%)、音が出ると明るく(90%)
+                    const lightness = 20 + (normalizedVal * 70);
                     
                     // 透明度
                     const alpha = 0.5 + (normalizedVal * 0.5);
 
-                    path.style.fill = `hsla(${hue}, ${saturation}%, ${lightness}%, ${alpha})`;
+                    // 色を適用
+                    path.style.fill = `hsla(${hue}, 100%, ${lightness}%, ${alpha})`;
+                    
+                    // 光の強さも個別に変化させる（よりリッチに）
+                    const glowSize = 2 + (normalizedVal * 15);
+                    path.style.filter = `drop-shadow(0 0 ${glowSize}px hsla(${hue}, 100%, 60%, 0.8))`;
                 });
             }
             animate();
