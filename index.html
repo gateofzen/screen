@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FEELCYCLE Visualizer - Strict Color Separation</title>
+    <title>FEELCYCLE Visualizer - Red Boost</title>
     <style>
         body {
             margin: 0;
@@ -39,17 +39,15 @@
             filter: none !important;
         }
 
-        /* パスの基本設定（初期値は黒） */
         path {
-            fill: #000000; 
             stroke: none !important; 
-            fill-rule: evenodd !important; /* 文字の中抜きを強制 */
-            transition: fill 0.05s linear;
+            fill-rule: evenodd !important;
+            transition: fill 0.06s ease-out; /* キビキビ動く */
         }
 
-        /* JSで「光るパーツ」と特定されたものだけ設定を上書き */
+        /* ロゴパーツ用（初期値） */
         path.glow-target {
-            fill: #ffffff; /* ベースは白 */
+            fill: #ffffff; 
         }
 
         button {
@@ -1858,18 +1856,16 @@
     const svgElement = document.getElementById('svg');
     const startButton = document.getElementById('startButton');
     
-    // 光るパーツのグループ（DOM要素）
     let glowGroup = null; 
     let reactivePaths = []; 
 
-    // --- 厳密な自動仕分けプログラム ---
+    // --- 自動仕分けプログラム ---
     function setupSVG() {
         const allPaths = Array.from(svgElement.querySelectorAll('path'));
         
-        // 光るパーツを隔離するグループを作成
         glowGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
         glowGroup.setAttribute("id", "isolated-glow-group");
-        // 初期状態は少し白く光らせておく
+        // 初期の発光状態
         glowGroup.style.filter = "drop-shadow(0 0 5px rgba(255, 255, 255, 0.5))";
         glowGroup.style.transition = "filter 0.05s linear";
         svgElement.appendChild(glowGroup);
@@ -1879,30 +1875,24 @@
         allPaths.forEach(path => {
             const dAttr = (path.getAttribute('d') || '').trim();
             const fillAttr = (path.getAttribute('fill') || '').toLowerCase();
-            // 親要素が reactive-paths クラスを持っているか確認
             const parentClass = path.parentElement ? path.parentElement.getAttribute('class') : '';
 
             // 1. 背景削除
-            // 画面いっぱいの四角形(M 613...)は消す
             if (dAttr.startsWith('M 613') || dAttr.startsWith('M 0 0') || dAttr.startsWith('M 613.00 0.00')) {
                 path.style.display = 'none'; 
                 return;
             }
 
             // 2. 光るパーツ（ロゴ）の判定
-            // 「クラス名が reactive-paths」または「色が #fbfffe」の場合のみ対象
+            // class="reactive-paths" または fill="#fbfffe"
             if ((parentClass && parentClass.includes('reactive-paths')) || fillAttr === '#fbfffe') {
-                // クラスを付与
                 path.classList.add('glow-target');
-                // 隔離グループへ移動
                 glowGroup.appendChild(path);
                 reactivePaths.push(path);
             } 
             // 3. 文字・その他
             else {
-                // 強制的に黒にする
                 path.style.fill = '#000000';
-                path.classList.remove('glow-target');
             }
         });
         
@@ -1923,7 +1913,7 @@
         setupSVG(); 
 
         if (reactivePaths.length === 0) {
-            alert('光るパーツが見つかりません。\n貼り付けるSVGコードに class="reactive-paths" または fill="#fbfffe" が含まれているか確認してください。');
+            alert('エラー: ロゴパーツが見つかりません。');
             return;
         }
 
@@ -1943,6 +1933,7 @@
                 requestAnimationFrame(animate);
                 analyser.getByteFrequencyData(dataArray);
 
+                // 低音取得
                 let bassTotal = 0;
                 for(let i = 0; i < 8; i++) bassTotal += dataArray[i];
                 const bassAverage = bassTotal / 8;
@@ -1952,40 +1943,51 @@
                 const scale = 1.0 + normalizedBass * 0.12; 
                 visualizerContainer.style.transform = `scale(${scale})`;
 
-                // 2. グループ全体の発光 (White -> Color Glow)
+                // 2. 発光エフェクト (Glow)
+                // 時間で色相環を一周するベースカラー
                 const baseHue = (Date.now() / 50) % 360; 
-                // 音が大きいほど光が強く、色づく
-                const glowIntensity = 5 + (normalizedBass * 40); 
-                const glowSat = normalizedBass * 100; // 音量で彩度UP
+                
+                // 音が大きいほど強く光る
+                const glowIntensity = 5 + (Math.pow(normalizedBass, 2) * 50); 
+                // 音が大きいほど光の彩度も上がる
+                const glowSat = normalizedBass * 100;
                 
                 if (glowGroup) {
                     glowGroup.style.filter = `drop-shadow(0 0 ${glowIntensity}px hsla(${baseHue}, ${glowSat}%, 60%, 0.8))`;
                 }
 
-                // 3. 各パーツの色変化 (White Base -> Colorful Peak)
+                // 3. 各パーツの色変化 (More Red!!)
                 reactivePaths.forEach((path, index) => {
                     const ratio = index / reactivePaths.length; 
                     const dataIndex = Math.floor(ratio * (bufferLength * 0.6)); 
                     
-                    // 感度5倍（白っぽくなりすぎないよう調整済み）
+                    // 感度5倍（少しの音でも色が出るように）
                     let val = dataArray[dataIndex] * 5.0;
                     if (val > 255) val = 255;
                     const normalizedVal = val / 255; 
 
-                    // --- 色の決定 ---
-                    const hue = 200 + (ratio * 120); // 青〜赤紫
+                    // ★【修正点】色の決定ロジック★
+                    // 180(水色) スタート
+                    // 240(青)
+                    // 300(ピンク/マゼンタ)
+                    // 360(赤) --- ここを通過させるのが重要
+                    // 400(オレンジ/黄) --- ここまで引っ張ることで赤の領域を広げる
+                    const hue = 180 + (ratio * 220); 
 
                     // 彩度: 音量に合わせて 0%(白) -> 100%(鮮やか)
-                    // Math.pow(..., 0.5) で、少しの音でも色がつきやすくする
+                    // Math.pow(..., 0.5) で、小さな音でもすぐに色が乗るように調整
                     const saturation = Math.pow(normalizedVal, 0.5) * 100;
 
                     // 明るさ: 
                     // 音なし: 100% (真っ白)
-                    // 音あり: 60% (色が一番濃く見える明るさ)
-                    // ※音が出るほど「明るさを下げる」ことで色が乗ります
-                    const lightness = 100 - (normalizedVal * 40); 
+                    // 音あり: 60% (色が一番濃く見える)
+                    // 赤色(Hue 340~380付近)の場合は、さらに暗くして赤を目立たせる補正
+                    let targetLightness = 60;
+                    if (hue > 330) targetLightness = 50; // 赤系は少し暗くしたほうが赤く見える
+
+                    const lightness = 100 - (normalizedVal * (100 - targetLightness)); 
                     
-                    // 透明度: 常にくっきり(0.9~1.0)
+                    // 透明度: 常にくっきり
                     const alpha = 0.9 + (normalizedVal * 0.1);
 
                     path.style.fill = `hsla(${hue}, ${saturation}%, ${lightness}%, ${alpha})`;
