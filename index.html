@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FEELCYCLE Visualizer - Bright & Sensitive</title>
+    <title>FEELCYCLE Visualizer - Rich Colors</title>
     <style>
         body {
             margin: 0;
@@ -41,7 +41,7 @@
 
         path {
             stroke: none !important; 
-            transition: fill 0.05s linear;
+            transition: fill 0.08s ease-out; /* 色変化を少しリッチに */
         }
 
         button {
@@ -1867,17 +1867,14 @@
             }
 
             // 2. 光るパーツ（ロゴ）の特定
-            // 元コードで「#fbfffe」だったパーツだけを光らせる
             if (fillAttr === '#fbfffe') {
                 reactivePaths.push(path);
-                path.style.fill = '#ffffff'; 
-                // 個別に強めのドロップシャドウをかける
-                path.style.filter = 'drop-shadow(0 0 8px rgba(255, 255, 255, 0.8))';
+                path.style.fill = '#222222'; // 初期状態は暗くしておく
             } 
             // 3. 静止パーツ（文字・黒模様）
             else {
                 path.style.fill = '#000000'; 
-                path.style.fillRule = 'evenodd'; // 中抜き修正
+                path.style.fillRule = 'evenodd'; // 文字の中抜き修正
                 path.setAttribute('fill-rule', 'evenodd');
                 path.style.filter = 'none';
             }
@@ -1926,41 +1923,44 @@
                 const bassAverage = bassTotal / 8;
 
                 // 1. 動き (Pulse)
-                // 感度を上げて、少しの音でも動きが出るように調整
-                // 基準1.0 + (音量 * 0.15)
-                const scale = 1.0 + (bassAverage / 255) * 0.15; 
+                // 低音に合わせて拡大縮小
+                const scale = 1.0 + (bassAverage / 255) * 0.12; 
                 visualizerContainer.style.transform = `scale(${scale})`;
 
-                // 2. 各パーツの色変化 (High Sensitivity & Brightness)
+                // 2. 各パーツの色変化 (Vivid & Deep)
                 reactivePaths.forEach((path, index) => {
                     const ratio = index / reactivePaths.length; 
                     const dataIndex = Math.floor(ratio * (bufferLength * 0.6)); 
                     
-                    // 【修正点1】感度を「5倍」にブースト（前回は2倍）
-                    let val = dataArray[dataIndex] * 5.0;
+                    // 感度は高めに（4倍）設定しつつ、上限張り付きを防ぐ
+                    let val = dataArray[dataIndex] * 4.0;
                     if (val > 255) val = 255;
                     const normalizedVal = val / 255; 
 
-                    // 色の決定 (音程連動)
-                    // 青(200) 〜 赤(360)
-                    const hue = 200 + (ratio * 160); 
+                    // --- 色の決定ルール（変更点） ---
+                    // 範囲拡大: 180(水色) 〜 380(赤〜オレンジ)
+                    // 音程による色の違いを明確にします
+                    const hue = 180 + (ratio * 200); 
 
-                    // 【修正点2】明るさを底上げ
-                    // 音がない時: 50% (暗くなりすぎない)
-                    // 音がある時: 100% (真っ白に輝く)
-                    const lightness = 50 + (normalizedVal * 50);
+                    // --- 明るさの調整（重要） ---
+                    // 白飛びさせないため、最大でも「70%」程度に抑えるのがコツです
+                    // 音なし: 30% (深い色)
+                    // 音最大: 70% (鮮やかな発光色) ※100%にすると白になります
+                    const lightness = 30 + (normalizedVal * 40);
                     
-                    // 【修正点3】透明度を上げてくっきりさせる
-                    // 音がない時: 0.8 (ほぼ透けない)
-                    // 音がある時: 1.0 (完全不透明)
+                    // 彩度はMAX
+                    const saturation = 100;
+
+                    // 透明度: 音に合わせて濃くする
                     const alpha = 0.8 + (normalizedVal * 0.2);
 
-                    path.style.fill = `hsla(${hue}, 100%, ${lightness}%, ${alpha})`;
+                    path.style.fill = `hsla(${hue}, ${saturation}%, ${lightness}%, ${alpha})`;
                     
-                    // 個別の光（Glow）も音に合わせてさらに強く
-                    const glowSize = 5 + (normalizedVal * 20);
-                    // 光の色もパーツの色に合わせる
-                    path.style.filter = `drop-shadow(0 0 ${glowSize}px hsla(${hue}, 100%, 60%, 0.8))`;
+                    // 個別の光（Glow）
+                    // 輝度を抑えた分、ドロップシャドウで「光ってる感」を補強
+                    // 影の色は少し明るめ(Lightness 60%)にして発光感を出す
+                    const glowSize = 2 + (normalizedVal * 15);
+                    path.style.filter = `drop-shadow(0 0 ${glowSize}px hsla(${hue}, 100%, 60%, 0.9))`;
                 });
             }
             animate();
