@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FEELCYCLE Visualizer - Strict Fix</title>
+    <title>FEELCYCLE Visualizer - Bright & Sensitive</title>
     <style>
         body {
             margin: 0;
@@ -36,14 +36,12 @@
             width: 100%;
             height: 100%;
             object-fit: contain;
-            /* 全体フィルタはOFF（縁光り防止） */
             filter: none !important;
         }
 
-        /* パスの基本設定 */
         path {
-            stroke: none !important; /* 縁取り線は強制削除 */
-            transition: fill 0.05s linear; /* 色変化をスムーズに */
+            stroke: none !important; 
+            transition: fill 0.05s linear;
         }
 
         button {
@@ -53,9 +51,9 @@
             padding: 15px 30px;
             font-size: 1.2rem;
             cursor: pointer;
-            background: rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.2);
             color: #fff;
-            border: 1px solid rgba(255, 255, 255, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.8);
             border-radius: 30px;
             letter-spacing: 2px;
             -webkit-tap-highlight-color: transparent;
@@ -65,7 +63,7 @@
 <body>
 
     <div id="visualizer-container">
-       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.00 0.00 613.00 612.00" id="svg">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.00 0.00 613.00 612.00" id="svg">
       <defs>
         <!-- 中央部分を切り抜くためのマスク定義 -->
         <mask id="centerMask">
@@ -1853,43 +1851,37 @@
     const startButton = document.getElementById('startButton');
     let reactivePaths = []; 
 
-    // --- 厳密な自動修正プログラム ---
+    // --- 自動修正プログラム ---
     function setupSVG() {
         const allPaths = svgElement.querySelectorAll('path');
         reactivePaths = [];
 
         allPaths.forEach(path => {
-            // パスの色と形状データを取得
             const fillAttr = (path.getAttribute('fill') || '').toLowerCase();
             const dAttr = (path.getAttribute('d') || '').trim();
 
-            // 1. 【背景削除】
-            // 背景用の四角形パスは "M 613.00 0.00" という座標で始まる特徴があります。
-            // これに一致したら「背景」とみなして削除します。
+            // 1. 背景削除 (613x612サイズの四角形パスを検知)
             if (dAttr.startsWith('M 613.00 0.00') || dAttr.startsWith('M 613 0')) {
                 path.style.display = 'none'; 
                 return;
             }
 
-            // 2. 【光るパーツ（ロゴ）の特定】
-            // 元コードで「#fbfffe」という色が指定されていたパーツだけを光らせます。
+            // 2. 光るパーツ（ロゴ）の特定
+            // 元コードで「#fbfffe」だったパーツだけを光らせる
             if (fillAttr === '#fbfffe') {
                 reactivePaths.push(path);
-                path.style.fill = '#ffffff'; // 初期色は白
-                // 個別にドロップシャドウをかける（これで縁は光らず、ロゴだけ光る）
-                path.style.filter = 'drop-shadow(0 0 5px rgba(255, 255, 255, 0.5))';
+                path.style.fill = '#ffffff'; 
+                // 個別に強めのドロップシャドウをかける
+                path.style.filter = 'drop-shadow(0 0 8px rgba(255, 255, 255, 0.8))';
             } 
-            // 3. 【静止パーツ（文字・黒模様）】
-            // それ以外（黒色 #000000 など）は全てここに来ます。
+            // 3. 静止パーツ（文字・黒模様）
             else {
-                path.style.fill = '#000000'; // 確実に黒にする
-                path.style.fillRule = 'evenodd'; // ★PやRの穴を抜く呪文
-                path.setAttribute('fill-rule', 'evenodd'); // 念のため属性もセット
-                path.style.filter = 'none'; // 光らせない
+                path.style.fill = '#000000'; 
+                path.style.fillRule = 'evenodd'; // 中抜き修正
+                path.setAttribute('fill-rule', 'evenodd');
+                path.style.filter = 'none';
             }
         });
-        
-        console.log(`セットアップ完了: 光るパーツ ${reactivePaths.length} 個を検出`);
     }
 
     // --- 画面常時オン ---
@@ -1905,7 +1897,7 @@
 
     // --- オーディオ処理 ---
     async function startAudio() {
-        setupSVG(); // 修正実行
+        setupSVG(); 
 
         if (reactivePaths.length === 0) {
             alert('光るパーツが見つかりません。\n貼り付けるSVGコードに fill="#fbfffe" が含まれているか確認してください。');
@@ -1934,44 +1926,40 @@
                 const bassAverage = bassTotal / 8;
 
                 // 1. 動き (Pulse)
-                // 低音に合わせて拡大縮小
-                const scale = 1.0 + (bassAverage / 255) * 0.12; 
+                // 感度を上げて、少しの音でも動きが出るように調整
+                // 基準1.0 + (音量 * 0.15)
+                const scale = 1.0 + (bassAverage / 255) * 0.15; 
                 visualizerContainer.style.transform = `scale(${scale})`;
 
-                // 2. 音量の全体平均
-                let volTotal = 0;
-                for(let i=0; i<bufferLength; i++) volTotal += dataArray[i];
-                const volAverage = volTotal / bufferLength;
-
-                // 3. 各パーツの色変化 (音程連動)
+                // 2. 各パーツの色変化 (High Sensitivity & Brightness)
                 reactivePaths.forEach((path, index) => {
-                    const ratio = index / reactivePaths.length; // 0.0 〜 1.0
-                    
-                    // 音データの参照位置
+                    const ratio = index / reactivePaths.length; 
                     const dataIndex = Math.floor(ratio * (bufferLength * 0.6)); 
                     
-                    // 音量取得とブースト
-                    let val = dataArray[dataIndex] * 2.0;
+                    // 【修正点1】感度を「5倍」にブースト（前回は2倍）
+                    let val = dataArray[dataIndex] * 5.0;
                     if (val > 255) val = 255;
                     const normalizedVal = val / 255; 
 
-                    // --- 色の決定ルール ---
-                    // 低音パーツほど「青(200)」
-                    // 高音パーツほど「赤(360)」
-                    // ランダムではなく固定ルールなので、音程に合わせて色がうねります
+                    // 色の決定 (音程連動)
+                    // 青(200) 〜 赤(360)
                     const hue = 200 + (ratio * 160); 
 
-                    // 輝度: 音がないときは暗く(20%)、音が出ると明るく(90%)
-                    const lightness = 20 + (normalizedVal * 70);
+                    // 【修正点2】明るさを底上げ
+                    // 音がない時: 50% (暗くなりすぎない)
+                    // 音がある時: 100% (真っ白に輝く)
+                    const lightness = 50 + (normalizedVal * 50);
                     
-                    // 透明度
-                    const alpha = 0.5 + (normalizedVal * 0.5);
+                    // 【修正点3】透明度を上げてくっきりさせる
+                    // 音がない時: 0.8 (ほぼ透けない)
+                    // 音がある時: 1.0 (完全不透明)
+                    const alpha = 0.8 + (normalizedVal * 0.2);
 
-                    // 色を適用
                     path.style.fill = `hsla(${hue}, 100%, ${lightness}%, ${alpha})`;
                     
-                    // 光の強さも個別に変化させる（よりリッチに）
-                    const glowSize = 2 + (normalizedVal * 15);
+                    // 個別の光（Glow）も音に合わせてさらに強く
+                    const glowSize = 5 + (normalizedVal * 20);
+                    // 光の色もパーツの色に合わせる
                     path.style.filter = `drop-shadow(0 0 ${glowSize}px hsla(${hue}, 100%, 60%, 0.8))`;
                 });
             }
