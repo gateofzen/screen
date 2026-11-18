@@ -28,9 +28,29 @@
             height: 90vmin;
             max-width: 95vw;
             max-height: 95vh;
-            will-change: transform;
-            transition: transform 0.05s ease-out;
+            position: relative;
         }
+
+        /* 丸ロゴ用レイヤー
+           #spinLayer（回転）> #pulseLayer（拡大）> 発光・ロゴ
+           回転と拡大はブラウザのアニメーション機能で動かす（GPU側で処理されるので、
+           色の更新などで処理が詰まっても動きはカクつかない） */
+        #spinLayer, #pulseLayer, #logoLayer, #glowLayer {
+            position: absolute;
+            inset: 0;
+            /* 丸ロゴの中心（SVG座標 311.63, 240.88）を回転・拡大の中心にする */
+            transform-origin: 50.836% 39.377%;
+            pointer-events: none;
+        }
+        #spinLayer, #pulseLayer { will-change: transform; }
+        /* 丸ロゴの発光：ぼかしは最初に1回だけ描き、毎フレームは色と濃さだけ変える（軽い） */
+        #glowLayer { will-change: filter; }
+        #glowLayer > div {
+            position: absolute;
+            inset: 0;
+            will-change: opacity;
+        }
+        #logoLayer svg, #glowLayer svg { width: 100%; height: 100%; overflow: visible; }
 
         svg {
             width: 100%;
@@ -44,7 +64,6 @@
             stroke: none !important; 
             /* ★重要: これでPやRの穴が確実に開きます */
             fill-rule: evenodd !important; 
-            transition: fill 0.05s linear;
         }
 
         /* 文字（黒いパーツ）は常に黒！ */
@@ -53,7 +72,7 @@
             filter: none !important;
         }
 
-        button {
+        #startButton {
             position: absolute;
             bottom: 5vh;
             z-index: 100;
@@ -66,6 +85,33 @@
             border-radius: 30px;
             letter-spacing: 2px;
             -webkit-tap-highlight-color: transparent;
+        }
+        /* 調整パネル（画面をダブルタップで表示/非表示） */
+        #syncPanel {
+            position: fixed;
+            right: 12px;
+            bottom: 10px;
+            display: none;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            letter-spacing: 1px;
+            color: rgba(255, 255, 255, 0.55);
+            z-index: 200;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        #syncPanel button {
+            min-width: 40px;
+            height: 34px;
+            font-size: 16px;
+            color: #fff;
+            background: rgba(255, 255, 255, 0.12);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            border-radius: 6px;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
         }
     </style>
 </head>
@@ -1853,6 +1899,13 @@
     </div>
 
     <button id="startButton">SYSTEM START</button>
+    <div id="syncPanel">
+        <span id="bpmLabel">BPM --</span>
+        <span>｜補正</span>
+        <button id="offsetMinus">−</button>
+        <span id="offsetLabel">0ms</span>
+        <button id="offsetPlus">＋</button>
+    </div>
 
     <script>
     const visualizerContainer = document.getElementById('visualizer-container');
@@ -1861,6 +1914,76 @@
     
     let logoPaths = []; 
     let glowGroup = null; 
+    let circleLogo = null;   // 丸いロゴ
+    let logoLayer = null, glowLayer = null, glowTight = null, glowWide = null;
+    let spinLayer = null, pulseLayer = null;
+
+    // ===== 動きの設定（ここの数字を変えると動き方を調整できます） =====
+    const CFG = {
+        // --- 回転（BPMに比例した一定速度） ---
+        direction: 1,      // 1 = 時計回り, -1 = 反時計回り
+        degPerBeat: 22.5,  // 1拍あたりに回る角度。22.5 = 16拍（4小節）で1回転 / 45 = 8拍で1回転
+        idleSpeed: 0,      // 音楽がない時（キックが途切れた時）の回転速度（度/秒）。0 = 止める
+
+        // --- 拡大（拍に合わせて毎拍同じ動きを繰り返す） ---
+        pulseEnabled: false, // 拡大のON/OFF（今は回転のみ。true にすると拍に合わせて拡大）
+
+        // --- 幾何学模様のマス：ミラーボール風の光 ---
+        cellsEnabled: true,  // マスの光のON/OFF
+        cellFillCenter: false, // 中央の大きな八角形も光らせるか
+        ballTint: 0.3,       // 光に淡い色が混じる割合（0 = すべて白, 1 = すべて色付き）
+        beatFlashMin: 3,     // 拍の頭でキラッと光るマスの数（静かな時）
+        beatFlashMax: 8,     // 同（低音が大きい時）
+        beatFlashDecay: 0.12,// 拍の頭の光が消える速さ（秒。小さいほど鋭い）
+        sparkleRate: 0.8,    // 拍の間のランダムな瞬き（1マスあたり1秒に何回。音が大きい時）
+        sparkleDecay: 0.07,  // 瞬きが消える速さ（秒）
+        glintLights: [-135, 45], // 固定の光源の方向（度。0 = 右, -90 = 上）。回転するマスがここを通ると光る
+        glintWidth: 9,       // 光源の前を通る時に光る範囲（度）
+        glintStrength: 0.8,  // その光の強さ（0〜1）
+        facetBase: 0.06,     // 音楽が鳴っている間、マスをうっすら見せておく濃さ（0 = 真っ黒）
+
+        // --- タイミング補正 ---
+        // マイク入力・画面・プロジェクターの遅れを打ち消すため、動きをこの分だけ先回りさせる（ミリ秒）
+        // 会場で ＋/− ボタンで調整でき、値はこの端末に保存されます
+        syncOffsetMs: 60,
+
+        // --- BPM推定 ---
+        bpmMin: 80,        // 推定するBPMの範囲（この範囲に倍・半分で折りたたむ）
+        bpmMax: 180,
+        bpmWindowMs: 8000, // 直近何ミリ秒分のキックからBPMを推定するか
+        bpmMinKicks: 6,    // BPMを出すのに必要なキックの数
+        bpmLostMs: 3000,   // キックがこの時間なければ「曲間」とみなして拡大を止める
+
+        // --- キック検出 ---
+        kickRatio: 0.5,    // 直近の最大キックに対してこの割合以上の「跳ね上がり」でキックとみなす
+        kickMinGapMs: 180  // キック判定の最短間隔（ミリ秒）
+    };
+
+    // 補正値は端末に保存（会場で一度合わせれば次回も使える）
+    try {
+        const saved = localStorage.getItem('fcv-syncOffsetMs');
+        if (saved !== null && !isNaN(+saved)) CFG.syncOffsetMs = +saved;
+    } catch (e) {}
+
+    // ===== 調整パネル（ダブルタップで表示/非表示） =====
+    const syncPanel = document.getElementById('syncPanel');
+    const bpmLabel = document.getElementById('bpmLabel');
+    const offsetLabel = document.getElementById('offsetLabel');
+    let panelVisible = false;
+    function showOffset() { offsetLabel.textContent = `${CFG.syncOffsetMs}ms`; }
+    function changeOffset(d) {
+        CFG.syncOffsetMs = Math.max(-200, Math.min(400, CFG.syncOffsetMs + d));
+        showOffset();
+        try { localStorage.setItem('fcv-syncOffsetMs', String(CFG.syncOffsetMs)); } catch (e) {}
+    }
+    document.getElementById('offsetMinus').addEventListener('click', e => { e.stopPropagation(); changeOffset(-10); });
+    document.getElementById('offsetPlus').addEventListener('click', e => { e.stopPropagation(); changeOffset(10); });
+    syncPanel.addEventListener('dblclick', e => e.stopPropagation());
+    document.addEventListener('dblclick', () => {
+        panelVisible = !panelVisible;
+        syncPanel.style.display = panelVisible ? 'flex' : 'none';
+        showOffset();
+    });
 
     // --- 自動仕分けプログラム ---
     function setupSVG() {
@@ -1868,7 +1991,6 @@
         
         // ロゴ用グループ（強い発光）
         glowGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
-        glowGroup.style.transition = "filter 0.05s linear"; 
         svgElement.appendChild(glowGroup);
 
         logoPaths = [];
@@ -1888,6 +2010,8 @@
             if ((parentClass && parentClass.includes('reactive-paths')) || fillAttr === '#fbfffe') {
                 glowGroup.appendChild(path);
                 logoPaths.push(path);
+                // 丸いロゴ本体（外周の円から始まるパス）を回転対象として記録
+                if (dAttr.startsWith('M 309.94 60.97')) circleLogo = path;
                 // 初期色：白
                 path.style.fill = '#ffffff'; 
             } 
@@ -1901,6 +2025,67 @@
                 path.setAttribute('fill-rule', 'evenodd');
             }
         });
+
+        // 丸ロゴを、同じ座標系の別SVG（専用レイヤー）に移す
+        if (circleLogo) {
+            const vb = svgElement.getAttribute('viewBox');
+            const mkSvg = () => {
+                const el = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+                el.setAttribute('viewBox', vb);
+                return el;
+            };
+            spinLayer = document.createElement('div');  spinLayer.id = 'spinLayer';
+            pulseLayer = document.createElement('div'); pulseLayer.id = 'pulseLayer';
+
+            // 発光用レイヤー（丸ロゴの形をぼかしたもの。細い光と広い光の2枚）
+            glowLayer = document.createElement('div');
+            glowLayer.id = 'glowLayer';
+            const makeGlow = (id, blur) => {
+                const div = document.createElement('div');
+                const g = mkSvg();
+                g.innerHTML = `<defs><filter id="${id}" x="-40%" y="-40%" width="180%" height="180%">
+                    <feGaussianBlur stdDeviation="${blur}"/></filter></defs>`;
+                const shape = circleLogo.cloneNode(true);
+                shape.style.fill = '#ff3333';           // 色は CSS の hue-rotate で回す
+                shape.setAttribute('filter', `url(#${id})`);
+                g.appendChild(shape);
+                div.appendChild(g);
+                glowLayer.appendChild(div);
+                return div;
+            };
+            glowTight = makeGlow('glowBlurTight', 3);
+            glowWide  = makeGlow('glowBlurWide', 16);
+            glowTight.style.opacity = '0.8';
+            glowWide.style.opacity = '0';
+
+            logoLayer = document.createElement('div');
+            logoLayer.id = 'logoLayer';
+            const layerSvg = mkSvg();
+
+            // 幾何学模様のマス：丸ロゴのパスの「くり抜き部分」を1つずつ取り出し、
+            // 色付きの図形としてロゴの線の下に敷く（ロゴと一緒に回転する）
+            if (CFG.cellsEnabled) {
+                const subpaths = circleLogo.getAttribute('d').trim().split(/(?=M\s)/);
+                subpaths.slice(1).forEach(sp => {          // 先頭は外周の円なので除く
+                    const isCenter = sp.trim().startsWith('M 210.36 240.90');
+                    if (isCenter && !CFG.cellFillCenter) return;
+                    const cell = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                    cell.setAttribute('d', sp.trim());
+                    cell.style.fill = '#000000';
+                    cell.style.opacity = '0';
+                    cell.style.fill = '#ffffff';
+                    layerSvg.appendChild(cell);
+                    cells.push(cell);
+                });
+            }
+            layerSvg.appendChild(circleLogo);
+            logoLayer.appendChild(layerSvg);
+
+            pulseLayer.appendChild(glowLayer);
+            pulseLayer.appendChild(logoLayer);
+            spinLayer.appendChild(pulseLayer);
+            visualizerContainer.appendChild(spinLayer);
+        }
     }
 
     let wakeLock = null;
@@ -1913,6 +2098,296 @@
         if (wakeLock !== null && document.visibilityState === 'visible') await requestWakeLock();
     });
 
+    // ===== 回転・拡大アニメーション（ブラウザのアニメーション機能で動かす） =====
+    // どちらも「1拍 = 1000」の時間単位で作り、再生速度 = 1000 / 1拍のミリ秒 にすると BPM に一致する
+    let spinAnim = null, pulseAnim = null;
+    const BEAT_UNIT = 1000;
+
+    function createAnimations() {
+        const beatsPerRev = 360 / CFG.degPerBeat;
+        const turn = 360 * (CFG.direction >= 0 ? 1 : -1);
+        spinAnim = spinLayer.animate(
+            [{ transform: 'rotate(0deg)' }, { transform: `rotate(${turn}deg)` }],
+            { duration: BEAT_UNIT * beatsPerRev, iterations: Infinity, easing: 'linear' });
+
+        // 拡大：拍の頭（0%）でピーク → なめらかに戻る → 次の拍の少し前から膨らむ
+        if (!CFG.pulseEnabled) { setIdle(); return; }
+        const n = Math.max(1, CFG.pulseEvery);
+        const S = `scale(${1 + CFG.pulseScale})`;
+        const fall = Math.min(0.95, CFG.pulseFall / n);
+        const riseStart = Math.max(fall + 0.01, 1 - CFG.pulseRise / n);
+        pulseAnim = pulseLayer.animate([
+            { offset: 0,         transform: S,          easing: 'cubic-bezier(0.25, 0.6, 0.35, 1)' }, // 戻り（最初速く→ゆっくり）
+            { offset: fall,      transform: 'scale(1)' },
+            { offset: riseStart, transform: 'scale(1)', easing: 'cubic-bezier(0.55, 0, 0.85, 0.5)' },  // 膨らみ（加速しながら）
+            { offset: 1,         transform: S }
+        ], { duration: BEAT_UNIT * n, iterations: Infinity, easing: 'linear' });
+
+        setIdle();
+    }
+
+    // BPM不明（無音・曲間）：ゆっくり回転、拡大はお休み
+    let pulseRunning = false;
+    let spinActive = false;   // BPMに合わせて回転中か
+    function setIdle() {
+        const beatsPerRev = 360 / CFG.degPerBeat;
+        spinAnim.playbackRate = CFG.idleSpeed > 0 ? beatsPerRev * CFG.idleSpeed / 360 : 0;
+        // 拡大は「元の大きさ」の位置で止めておく
+        if (pulseAnim) {
+            pulseAnim.pause();
+            pulseAnim.currentTime = BEAT_UNIT * Math.max(1, CFG.pulseEvery) * 0.7;
+        }
+        pulseRunning = false;
+        spinActive = false;
+    }
+
+    // ===== 拍の時計 =====
+    // キックの時刻から BPM（拍の長さ）と「拍の頭がいつ来るか」を推定し続ける
+    let bpm = null;          // 推定BPM
+    let beatRef = null;      // 拍の頭の基準時刻（ms, performance.now 基準）
+    let kickTimes = [];
+    let lastKick = 0;
+
+    // ===== マス：ミラーボール風の光 =====
+    // 各マスの「明るさ」を毎フレーム計算して、変化があった時だけ反映する
+    //   ① 拍の頭：数か所が鋭くキラッと光る
+    //   ② 拍の間：あちこちで小さな瞬き（音が大きいほど多い）
+    //   ③ 固定の光源：回転するマスが光源の方向を通過すると光が流れる
+    const cells = [];
+    let cellState = null;          // [{ angle, flash, decay, color, shown, shownColor }]
+    let musicLevel = 0;            // 0〜1：音楽が鳴っているか（なめらかに変化）
+    let lastCellPhase = null, lastCellTrigger = 0;
+
+    function initCells() {
+        cellState = cells.map(c => {
+            const bb = c.getBBox();
+            const cx = bb.x + bb.width / 2 - 311.63, cy = bb.y + bb.height / 2 - 240.88;
+            return { angle: Math.atan2(cy, cx) * 180 / Math.PI, flash: 0, decay: 0.1,
+                     color: '#ffffff', shown: -1, shownColor: '' };
+        });
+    }
+
+    // ミラーボールの光の色：ほとんど白、ときどき淡い色
+    function ballColor() {
+        if (Math.random() >= CFG.ballTint) {
+            return Math.random() < 0.5 ? '#ffffff' : '#eef3ff';       // 白・青みがかった白（シルバー）
+        }
+        const hue = Math.floor(Math.random() * 360);
+        return `hsl(${hue}, 90%, ${78 + Math.floor(Math.random() * 10)}%)`; // 淡い色
+    }
+
+    function flashCell(i, strength, decay) {
+        const st = cellState[i];
+        if (strength < st.flash) return;          // より明るく光っている最中なら上書きしない
+        st.flash = strength;
+        st.decay = decay;
+        st.color = ballColor();
+    }
+
+    function beatFlash(loud) {
+        const n = Math.round(CFG.beatFlashMin + (CFG.beatFlashMax - CFG.beatFlashMin) * Math.min(1, loud * 1.5));
+        for (let k = 0; k < n; k++) flashCell(Math.floor(Math.random() * cells.length), 1, CFG.beatFlashDecay);
+    }
+
+    // スピン（回転レイヤー）の現在の角度
+    function currentSpinAngle() {
+        if (!spinAnim) return 0;
+        const dur = BEAT_UNIT * 360 / CFG.degPerBeat;
+        const t = ((spinAnim.currentTime % dur) + dur) % dur;
+        return t / dur * 360 * (CFG.direction >= 0 ? 1 : -1);
+    }
+
+    function updateCells(now, dt, loud) {
+        if (!cells.length) return;
+        if (!cellState) initCells();
+
+        // 音楽が鳴っているか：BPMが取れている、または直近にキックがある
+        const musicOn = (bpm !== null) || (now - lastKick < 1500 && lastKick > 0);
+        musicLevel += ((musicOn ? 1 : 0) - musicLevel) * (1 - Math.exp(-dt / (musicOn ? 0.3 : 0.8)));
+
+        if (musicOn) {
+            // ① 拍の頭でキラッ
+            if (bpm !== null && beatRef !== null) {
+                const P = 60000 / bpm;
+                const x = (now + CFG.syncOffsetMs - beatRef) / P;
+                const frac = x - Math.floor(x);
+                if (lastCellPhase !== null && frac < lastCellPhase && now - lastCellTrigger > P * 0.5) {
+                    beatFlash(loud);
+                    lastCellTrigger = now;
+                }
+                lastCellPhase = frac;
+            } else {
+                lastCellPhase = null;
+                if (lastKick > lastCellTrigger) { beatFlash(loud); lastCellTrigger = now; } // BPM確定前はキックに合わせる
+            }
+            // ② ランダムな瞬き
+            const p = CFG.sparkleRate * (0.2 + 0.8 * Math.min(1, loud * 1.5)) * dt;
+            for (let i = 0; i < cells.length; i++) {
+                if (Math.random() < p) flashCell(i, 0.55 + Math.random() * 0.35, CFG.sparkleDecay);
+            }
+        } else {
+            lastCellPhase = null;
+        }
+
+        // ③ 固定の光源の前を通るマスが光る
+        const spin = currentSpinAngle();
+        const glintAmp = CFG.glintStrength * musicLevel * (0.5 + 0.5 * Math.min(1, loud * 1.5));
+
+        for (let i = 0; i < cells.length; i++) {
+            const st = cellState[i];
+            st.flash *= Math.exp(-dt / st.decay);
+            let glint = 0;
+            if (glintAmp > 0.01) {
+                const a = st.angle + spin;
+                for (const L of CFG.glintLights) {
+                    let d = ((a - L) % 360 + 540) % 360 - 180;   // -180〜180
+                    glint = Math.max(glint, Math.exp(-(d * d) / (2 * CFG.glintWidth * CFG.glintWidth)));
+                }
+                glint *= glintAmp;
+            }
+            const base = CFG.facetBase * musicLevel;
+            const v = Math.max(base, glint, st.flash);
+            const color = st.flash >= glint ? st.color : '#ffffff';
+            // 変化があった時だけ書き換える（描画の負担を減らす）
+            if (Math.abs(v - st.shown) > 0.01) { cells[i].style.opacity = v.toFixed(3); st.shown = v; }
+            if (color !== st.shownColor && v > 0.02) { cells[i].style.fill = color; st.shownColor = color; }
+        }
+    }
+
+    function estimateBpm(now) {
+        kickTimes = kickTimes.filter(t => now - t < CFG.bpmWindowMs);
+        if (kickTimes.length < CFG.bpmMinKicks) return;
+        // キック同士の「あらゆる組み合わせ」の間隔が、どの拍の長さの整数倍に一番よく乗るかを採点
+        const intervals = [];
+        for (let i = 0; i < kickTimes.length; i++) {
+            for (let j = i + 1; j < kickTimes.length; j++) {
+                const d = kickTimes[j] - kickTimes[i];
+                if (d > 2500) break;
+                if (d >= 150) intervals.push(d);
+            }
+        }
+        const minT = 60000 / CFG.bpmMax, maxT = 60000 / CFG.bpmMin;
+        const sigma = 12;
+        let bestT = 0, bestScore = 0;
+        const scores = [];
+        for (let T = minT; T <= maxT; T += 1) {
+            let sc = 0;
+            for (const d of intervals) {
+                const k = Math.round(d / T);
+                if (k < 1) continue;
+                const e = d - k * T;
+                sc += Math.exp(-(e * e) / (2 * sigma * sigma)) / k;
+            }
+            scores.push(sc);
+            if (sc > bestScore) { bestScore = sc; bestT = T; }
+        }
+        if (bestScore < 2) return;
+        const idx = Math.round(bestT - minT);
+        if (idx > 0 && idx < scores.length - 1) {
+            const y0 = scores[idx - 1], y1 = scores[idx], y2 = scores[idx + 1];
+            const den = y0 - 2 * y1 + y2;
+            if (den < 0) bestT += 0.5 * (y0 - y2) / den;
+        }
+        const est = 60000 / bestT;
+        if (bpm === null || Math.abs(est - bpm) > 15) {
+            bpm = est;           // 曲が変わった → 即切り替え
+        } else {
+            bpm += (est - bpm) * 0.2;
+        }
+    }
+
+    // 拍の頭の位置（位相）を決める
+    //   直近のキックを「強さ」で重み付けして、拍の長さで割った余り（拍の中のどこで鳴ったか）を平均する。
+    //   キックはベース等より強く出るので、裏拍の音が混じっても拍の頭はキックに合う。
+    let kickEvents = [];     // { t: 時刻, w: 強さ }
+    function updatePhase(now) {
+        kickEvents = kickEvents.filter(k => now - k.t < CFG.bpmWindowMs);
+        if (bpm === null || kickEvents.length < 3) return;
+        const P = 60000 / bpm;
+        let x = 0, y = 0;
+        for (const k of kickEvents) {
+            const ph = 2 * Math.PI * (k.t % P) / P;
+            const w = Math.pow(k.w, 4) * Math.exp(-(now - k.t) / 4000); // 強いキック・新しいキックほど重視
+            x += w * Math.cos(ph);
+            y += w * Math.sin(ph);
+        }
+        if (x === 0 && y === 0) return;
+        const phase = Math.atan2(y, x) / (2 * Math.PI) * P;   // 拍の頭の「余り」（ms）
+        beatRef = phase + Math.round((now - phase) / P) * P;  // 直近の拍の頭の時刻
+    }
+
+    // 毎フレーム：アニメーションの速度・再生位置を拍の時計に合わせる（必要な時だけ操作する）
+    let lastAdjust = 0, lastSpinAdjust = 0;
+    function steerAnimations(now) {
+        if (!spinAnim) return;
+        if (bpm === null || beatRef === null) {
+            // 音楽がない：拡大はお休み、回転は約1.5秒かけてなめらかに減速（idleSpeed まで）
+            if (pulseRunning && pulseAnim) {
+                pulseAnim.pause();
+                pulseAnim.currentTime = BEAT_UNIT * Math.max(1, CFG.pulseEvery) * 0.7;
+                pulseRunning = false;
+            }
+            if (now - lastSpinAdjust > 100) {
+                lastSpinAdjust = now;
+                const beatsPerRev = 360 / CFG.degPerBeat;
+                const idleRate = CFG.idleSpeed > 0 ? beatsPerRev * CFG.idleSpeed / 360 : 0;
+                const cur = spinAnim.playbackRate;
+                if (Math.abs(cur - idleRate) > 0.001) {
+                    let next = idleRate + (cur - idleRate) * 0.8;
+                    if (Math.abs(next - idleRate) < 0.02) next = idleRate;
+                    spinAnim.playbackRate = next;
+                }
+            }
+            spinActive = false;
+            return;
+        }
+        const P = 60000 / bpm;
+        const baseRate = BEAT_UNIT / P;   // 1拍で degPerBeat 度回る速度
+
+        // --- 回転：BPMに比例した一定速度 ---
+        //   速度を変える時は一気に変えず、約1秒かけて段階的に近づける（曲の切り替わりでガクッとしないように）
+        //   速度の変更はごく小さなずれ（1%未満）では行わない（変更の回数を減らしてなめらかに）
+        if (now - lastSpinAdjust > 200) {
+            lastSpinAdjust = now;
+            const cur = spinAnim.playbackRate;
+            const diff = baseRate - cur;
+            if (Math.abs(diff) > baseRate * 0.01) {
+                const step = Math.max(Math.abs(cur) * 0.25, baseRate * 0.12);
+                spinAnim.playbackRate = cur + Math.max(-step, Math.min(step, diff));
+            }
+            spinActive = true;
+        }
+
+        if (!CFG.pulseEnabled || !pulseAnim) return;
+
+        // --- 拡大：拍の頭でピーク（補正分だけ先回りして表示） ---
+        const n = Math.max(1, CFG.pulseEvery);
+        const beatsNow = (now + CFG.syncOffsetMs - beatRef) / P;
+        const cycle = BEAT_UNIT * n;
+        const want = (((beatsNow % n) + n) % n) * BEAT_UNIT;   // 目標の再生位置
+
+        if (!pulseRunning) {
+            pulseAnim.currentTime = want;
+            pulseAnim.playbackRate = baseRate;
+            pulseAnim.play();
+            pulseRunning = true;
+            lastAdjust = now;
+        } else if (now - lastAdjust > 150) {
+            lastAdjust = now;
+            const cur = pulseAnim.currentTime % cycle;
+            let err = want - cur;
+            if (err > cycle / 2) err -= cycle;
+            if (err < -cycle / 2) err += cycle;
+            if (Math.abs(err) > BEAT_UNIT * 0.15) {
+                pulseAnim.currentTime = want;             // 大きくずれた（曲が変わった等）→ 合わせ直す
+                pulseAnim.playbackRate = baseRate;
+            } else {
+                const rate = baseRate + Math.max(-0.08, Math.min(0.08, err / 600));
+                if (Math.abs(rate - pulseAnim.playbackRate) > baseRate * 0.004) pulseAnim.playbackRate = rate;
+            }
+        }
+    }
+
     async function startAudio() {
         setupSVG(); 
 
@@ -1920,11 +2395,18 @@
             alert('ロゴパーツが見つかりません。SVGを貼り付けてください。');
             return;
         }
+        if (circleLogo) createAnimations();
 
         try {
             await requestWakeLock();
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            // エコーキャンセル・ノイズ抑制は処理遅延があり、音楽を削ってしまうことがあるのでOFF
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: true,
+                latency: 0
+            } });
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
             const analyser = audioContext.createAnalyser();
             
             analyser.fftSize = 1024;
@@ -1933,26 +2415,74 @@
             const source = audioContext.createMediaStreamSource(stream);
             source.connect(analyser);
 
+            // キック検出用：低音（〜150Hz）だけ取り出し、振幅が「急に跳ね上がった瞬間」をキックとする
+            const kickFilter = audioContext.createBiquadFilter();
+            kickFilter.type = 'lowpass';
+            kickFilter.frequency.value = 150;
+            const levelAnalyser = audioContext.createAnalyser();
+            levelAnalyser.fftSize = 512;   // 約10msぶん
+            const levelData = new Float32Array(levelAnalyser.fftSize);
+            source.connect(kickFilter);
+            kickFilter.connect(levelAnalyser);
+            let levelSlow = 0, transMax = 0.02, kickArmed = true;
+            let lastTime = performance.now();
+
+            function detectKick(now, dt) {
+                levelAnalyser.getFloatTimeDomainData(levelData);
+                let level = 0;
+                for (let i = 0; i < levelData.length; i++) {
+                    const v = Math.abs(levelData[i]);
+                    if (v > level) level = v;
+                }
+                const transient = Math.max(0, level - levelSlow);
+                levelSlow += (level - levelSlow) * (1 - Math.exp(-dt / 0.2));
+                transMax = Math.max(transient, 0.02, transMax * Math.exp(-dt / 8));
+                const ratio = transient / transMax;
+
+                if (kickArmed && ratio > CFG.kickRatio && now - lastKick > CFG.kickMinGapMs) {
+                    kickArmed = false;
+                    lastKick = now;
+                    kickTimes.push(now);
+                    kickEvents.push({ t: now, w: Math.min(1, ratio) });
+                    estimateBpm(now);
+                    updatePhase(now);
+                }
+                if (ratio < CFG.kickRatio * 0.5) kickArmed = true;
+
+                // キックが途切れた → 曲間とみなす
+                if (bpm !== null && now - lastKick > CFG.bpmLostMs) {
+                    bpm = null; beatRef = null; kickTimes = []; kickEvents = [];
+                }
+            }
+
             function animate() {
                 requestAnimationFrame(animate);
-                analyser.getByteFrequencyData(dataArray);
+                const now = performance.now();
+                const dt = Math.min((now - lastTime) / 1000, 0.1);
+                lastTime = now;
 
+                analyser.getByteFrequencyData(dataArray);
                 let bassTotal = 0;
                 for(let i = 0; i < 8; i++) bassTotal += dataArray[i];
-                const bassAverage = bassTotal / 8;
-                const normalizedBass = bassAverage / 255;
+                const normalizedBass = bassTotal / 8 / 255;
 
-                // 1. 動き
-                const scale = 1.0 + normalizedBass * 0.12; 
-                visualizerContainer.style.transform = `scale(${scale})`;
+                // 1. キック検出 → 拍の時計 → 回転・拡大アニメーションの速度と位置を合わせる
+                detectKick(now, dt);
+                steerAnimations(now);
+                updateCells(now, dt, normalizedBass);
+                if (panelVisible) bpmLabel.textContent = bpm ? `BPM ${Math.round(bpm)}` : 'BPM --';
 
-                // 2. ロゴ全体の発光 (White -> Colorful)
+                // 2. 発光
                 const glowIntensity = 5 + (Math.pow(normalizedBass, 2) * 50); 
                 const baseHue = (Date.now() / 50) % 360;
                 const glowSat = normalizedBass * 100;
-                
                 if (glowGroup) {
-                    glowGroup.style.filter = `drop-shadow(0 0 ${glowIntensity}px hsla(${baseHue}, ${glowSat}%, 60%, 0.8))`;
+                    glowGroup.style.filter = `drop-shadow(0 0 ${glowIntensity.toFixed(1)}px hsla(${baseHue.toFixed(0)}, ${glowSat.toFixed(0)}%, 60%, 0.8))`;
+                }
+                if (glowLayer) {
+                    glowLayer.style.filter =
+                        `hue-rotate(${baseHue.toFixed(0)}deg) saturate(${normalizedBass.toFixed(2)}) brightness(${(1.7 - 0.7 * normalizedBass).toFixed(2)})`;
+                    glowWide.style.opacity = Math.pow(normalizedBass, 2).toFixed(3);
                 }
 
                 // 3. ロゴの色変化（全色対応・白ベース）
