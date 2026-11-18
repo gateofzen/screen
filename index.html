@@ -1946,6 +1946,7 @@
         <span id="offsetLabel">0ms</span>
         <button id="offsetPlus">＋</button>
         <button id="bgToggle" style="min-width:110px">背景</button>
+        <button id="bingoLink" style="min-width:72px">ビンゴへ</button>
     </div>
 
     <script>
@@ -2006,6 +2007,9 @@
         strobeBar: 0.45,     // 4拍に1回の光の強さ
         strobeMs: 220,       // 光が消えるまでの時間（ミリ秒）
 
+        // --- 調整パネルの「ビンゴへ」ボタンのリンク先 ---
+        bingoUrl: 'https://gateofzen.github.io/bnk2025-bingo/host.html',
+
         // --- 動き始め ---
         startBpm: 125,       // BPMが確定する前（曲の始まり）に、最初のキックから使う仮のテンポ
 
@@ -2052,6 +2056,11 @@
     document.getElementById('offsetMinus').addEventListener('click', e => { e.stopPropagation(); changeOffset(-10); });
     document.getElementById('offsetPlus').addEventListener('click', e => { e.stopPropagation(); changeOffset(10); });
     syncPanel.addEventListener('dblclick', e => e.stopPropagation());
+    // ビンゴのページへ移動（同じタブで開く。戻る操作でこの画面に戻れる）
+    document.getElementById('bingoLink').addEventListener('click', e => {
+        e.stopPropagation();
+        location.href = CFG.bingoUrl;
+    });
     const bgToggle = document.getElementById('bgToggle');
     const BG_NAMES = { mirror: '背景:ミラーボール', off: '背景:なし' };
     function showBgState() { bgToggle.textContent = BG_NAMES[CFG.bgType]; }
