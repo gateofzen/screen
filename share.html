@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>曲名リモコン - FEELCYCLE Visualizer</title>
+<link rel="manifest" href="share.webmanifest">
+<meta name="theme-color" content="#0b0b10">
+<link rel="icon" href="np-icon-192.png">
+<style>
+  :root { --bg:#0b0b10; --card:#16161f; --line:#2a2a38; --text:#f1f1f5; --sub:#9a9ab0; --accent:#3ad0ff; --ok:#3ddc84; --warn:#ffb020; --ng:#ff5a6a; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family: -apple-system, 'Hiragino Sans', 'Noto Sans JP', Roboto, sans-serif;
+         padding: max(12px, env(safe-area-inset-top)) 14px 40px; -webkit-tap-highlight-color: transparent; }
+  h1 { font-size: 18px; margin: 4px 0 10px; display:flex; align-items:center; gap:8px; }
+  .badge { font-size: 12px; padding: 3px 8px; border-radius: 999px; background:#2a2a38; color:var(--sub); font-weight:normal; }
+  .badge.on { background: rgba(61,220,132,.15); color: var(--ok); }
+  .badge.off { background: rgba(255,90,106,.15); color: var(--ng); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; margin: 10px 0; }
+  .label { font-size:12px; color:var(--sub); margin-bottom:6px; }
+  .now-title { font-size:18px; font-weight:600; line-height:1.3; }
+  .now-sub { font-size:14px; color:var(--sub); margin-top:2px; }
+  .row { display:flex; gap:8px; margin-top:10px; }
+  button { font: inherit; border:0; border-radius:10px; padding:10px 14px; background:#2a2a38; color:var(--text); }
+  button.primary { background: var(--accent); color:#001018; font-weight:600; }
+  button:active { opacity:.7; }
+  input { font: inherit; width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:#0f0f16; color:var(--text); }
+  .list { margin-top:8px; }
+  .item { padding:10px 2px; border-top:1px solid var(--line); }
+  .item:first-child { border-top:0; }
+  .item .t { font-size:15px; font-weight:600; }
+  .item .a { font-size:13px; color:var(--sub); }
+  .item .p { font-size:12px; color:var(--accent); margin-top:2px; }
+  .msg { font-size:14px; margin-top:6px; }
+  .msg.ok { color: var(--ok); } .msg.warn { color: var(--warn); } .msg.ng { color: var(--ng); }
+  .raw { font-size:12px; color:var(--sub); white-space:pre-wrap; word-break:break-all; margin-top:4px; }
+  details summary { color: var(--sub); font-size: 14px; }
+  .help { font-size: 13px; color: var(--sub); line-height: 1.6; }
+  .help b { color: var(--text); }
+</style>
+</head>
+<body>
+  <h1>曲名リモコン <span id="tabletBadge" class="badge">タブレット：確認中</span></h1>
+
+  <div class="card">
+    <div class="label">いま画面に出ている曲</div>
+    <div id="nowTitle" class="now-title">—</div>
+    <div id="nowSub" class="now-sub"></div>
+    <div class="row"><button id="clearBtn">表示を消す</button></div>
+  </div>
+
+  <div class="card" id="shareCard" style="display:none">
+    <div class="label">Shazam から共有された曲</div>
+    <div id="shareMsg" class="msg"></div>
+    <div id="shareRaw" class="raw"></div>
+    <div id="shareList" class="list"></div>
+  </div>
+
+  <div class="card">
+    <div class="label">曲名・アーティスト名で探して送る</div>
+    <input id="q" type="search" placeholder="例: when love / guetta" autocomplete="off">
+    <div id="searchList" class="list"></div>
+  </div>
+
+  <div class="card">
+    <details>
+      <summary>CADENCE に無い曲を手入力で送る</summary>
+      <div style="margin-top:10px"><input id="manTitle" placeholder="曲名"></div>
+      <div style="margin-top:8px"><input id="manArtist" placeholder="アーティスト名"></div>
+      <div class="row"><button class="primary" id="manSend">この内容で表示</button></div>
+    </details>
+  </div>
+
+  <div class="card help">
+    <b>使い方</b><br>
+    1. このページを Chrome で開き、メニューの「ホーム画面に追加」（または「アプリをインストール」）でアプリとして追加します（最初の1回だけ）。<br>
+    2. Shazam アプリで曲を認識したら、曲の画面の「共有」を押し、共有先から <b>曲名リモコン</b> を選びます。<br>
+    3. CADENCE の曲と確実に一致すれば、そのままタブレットに表示されます。候補が複数ある時は、正しい曲をタップしてください。<br>
+    Shazam が外した時は、上の検索から曲を選んで送れます。
+  </div>
+
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+<script>
+  // ===== 設定 =====
+  const CADENCE_BASE = 'https://gateofzen.github.io/feelcycle-setlist/';
+  const FIREBASE = {   // ビンゴと同じ Firebase（remote/nowPlaying を使う）
+    apiKey: "AIzaSyDNPT6qv47ku9PBYLm_9FDl-hY0sQqZHn8",
+    authDomain: "bnk2025-bingo.firebaseapp.com",
+    databaseURL: "https://bnk2025-bingo-default-rtdb.firebaseio.com",
+    projectId: "bnk2025-bingo",
+    storageBucket: "bnk2025-bingo.firebasestorage.app",
+    messagingSenderId: "127094139624",
+    appId: "1:127094139624:web:703cf76da95ba05154b75d"
+  };
+
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  // ===== Firebase =====
+  firebase.initializeApp(FIREBASE);
+  const db = firebase.database();
+  db.ref('remote/visualizer/online').on('value', s => {
+    const b = $('tabletBadge');
+    if (s.val() === true) { b.textContent = 'タブレット：接続中'; b.className = 'badge on'; }
+    else { b.textContent = 'タブレット：未接続'; b.className = 'badge off'; }
+  });
+  db.ref('remote/nowPlaying').on('value', s => {
+    const v = s.val();
+    if (!v || v.clear) { $('nowTitle').textContent = '—'; $('nowSub').textContent = v && v.clear ? '（消しました）' : ''; return; }
+    $('nowTitle').textContent = v.title || '';
+    $('nowSub').textContent = [v.artist, v.programs].filter(Boolean).join(' ／ ');
+  });
+  function sendSong(o) {
+    return db.ref('remote/nowPlaying').set({
+      key: o.key || null, title: o.title || '', artist: o.artist || '',
+      programs: o.programs || '', source: o.source || 'manual',
+      ts: firebase.database.ServerValue.TIMESTAMP
+    });
+  }
+  $('clearBtn').onclick = () => db.ref('remote/nowPlaying').set({ clear: true, ts: firebase.database.ServerValue.TIMESTAMP });
+
+  // ===== CADENCE のデータ =====
+  let songs = null, ready = null;
+  function loadScript(src) {
+    return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error(src)); document.head.appendChild(s); });
+  }
+  ready = (async () => {
+    await loadScript(CADENCE_BASE + 'matcher.js');        // norm() / baseTitle() を使う
+    const r = await fetch(CADENCE_BASE + 'songs.json');
+    if (!r.ok) throw new Error('songs.json ' + r.status);
+    songs = await r.json();
+    for (const s of songs) {
+      s._t = norm(s.title); s._tEn = norm(s.titleEn || '');
+      s._base = baseTitle(s.title);
+      s._a = [norm(s.artist), norm(s.artistEn || '')].filter(Boolean);
+      s._all = [s._t, s._tEn, ...s._a].join(' ');
+    }
+  })();
+
+  const progText = s => {
+    const names = (s.programs || []).map(p => p.name);
+    return names.length <= 3 ? names.join(' / ') : names.slice(0, 3).join(' / ') + ` ほか${names.length - 3}件`;
+  };
+  function itemHtml(s, i) {
+    return `<div class="item" data-i="${i}"><div class="t">${esc(s.titleEn || s.title)}</div>` +
+      `<div class="a">${esc(s.artistEn || s.artist)}</div><div class="p">${esc(progText(s))}</div></div>`;
+  }
+  function bindList(el, arr, source, onSent) {
+    el.querySelectorAll('.item').forEach(div => div.onclick = async () => {
+      const s = arr[+div.dataset.i];
+      await sendSong({ key: s.key, title: s.titleEn || s.title, artist: s.artistEn || s.artist, programs: progText(s), source });
+      if (onSent) onSent(s);
+    });
+  }
+
+  // ===== Shazam からの共有を受け取る =====
+  //   Shazam の共有文の形式は決まっていないので、文章全体の中に CADENCE の曲名・アーティスト名が
+  //   含まれているかで探す
+  // 文章 t の中に語句 x が含まれるか。英数字の語は語の途中に一致しないよう前後を確認し、
+  // 日本語（前後にスペースが無い）は、そのまま含まれていれば一致とみなす
+  function has(t, x) {
+    const w = c => !!c && /[a-z0-9]/.test(c);
+    const sw = w(x[0]), ew = w(x[x.length - 1]);
+    for (let i = t.indexOf(x); i >= 0; i = t.indexOf(x, i + 1)) {
+      if ((sw && w(t[i - 1])) || (ew && w(t[i + x.length]))) continue;
+      return true;
+    }
+    return false;
+  }
+  function findInText(text) {
+    const t = ' ' + norm(text) + ' ';
+    const words = new Set(t.trim().split(' '));
+    const out = [];
+    for (const s of songs) {
+      const titles = [s._t, s._tEn, s._base].filter(x => x && x.length >= 2);
+      let titleHit = 0;
+      for (const x of titles) {
+        if (has(t, x)) { titleHit = Math.max(titleHit, 1); continue; }
+        // 語単位で全部入っているか（語順の違い・記号の違いに強く）
+        const ws = x.split(' ').filter(Boolean);
+        if (ws.length >= 2 && ws.every(w => words.has(w))) titleHit = Math.max(titleHit, 0.8);
+      }
+      if (!titleHit) continue;
+      const artistHit = s._a.some(a => a && (has(t, a) ||
+        a.split(' ').filter(w => w.length >= 3 && !['and', 'feat', 'the'].includes(w)).some(w => words.has(w)))) ? 1 : 0;
+      const len = Math.max(...titles.map(x => x.length));
+      out.push({ s, score: titleHit * (artistHit ? 2 : 1) + Math.min(len, 40) / 400, titleHit, artistHit });
+    }
+    return out.sort((a, b) => b.score - a.score);
+  }
+
+  async function handleShare() {
+    const p = new URLSearchParams(location.search);
+    const parts = [p.get('title'), p.get('text'), p.get('url')].filter(Boolean);
+    if (!parts.length) return;
+    history.replaceState(null, '', location.pathname);   // 再読み込みで二重に送らないように
+    $('shareCard').style.display = '';
+    const rawText = parts.join('\n');
+    $('shareRaw').textContent = rawText;
+    $('shareMsg').textContent = 'CADENCE と照合中…'; $('shareMsg').className = 'msg';
+    try { await ready; } catch (e) { $('shareMsg').textContent = 'CADENCE を読み込めません：' + e.message; $('shareMsg').className = 'msg ng'; return; }
+    // URL の部分は、末尾の英字の曲名（例: /track/123/when-love-takes-over）だけを語として使う
+    const text = rawText.replace(/https?:\/\/\S+/g, u => ' ' + decodeURIComponent(u.split('/').pop() || '').replace(/[-_]/g, ' ') + ' ');
+    const found = findInText(text);
+    const top = found[0];
+    const clear = top && top.titleHit === 1 && top.artistHit && !(found[1] && found[1].score >= top.score - 0.05 && found[1].s.key !== top.s.key);
+    if (clear) {
+      const s = top.s;
+      await sendSong({ key: s.key, title: s.titleEn || s.title, artist: s.artistEn || s.artist, programs: progText(s), source: 'shazam' });
+      $('shareMsg').innerHTML = '✓ 送信しました：<b>' + esc(s.titleEn || s.title) + '</b>';
+      $('shareMsg').className = 'msg ok';
+      const others = found.slice(1, 4).map(x => x.s);
+      if (others.length) {
+        $('shareList').innerHTML = '<div class="label" style="margin-top:10px">違う曲だった時はこちらをタップ</div>' + others.map(itemHtml).join('');
+        bindList($('shareList'), others, 'shazam', s2 => { $('shareMsg').innerHTML = '✓ 送信しました：<b>' + esc(s2.titleEn || s2.title) + '</b>'; });
+      }
+    } else if (found.length) {
+      const cands = found.slice(0, 6).map(x => x.s);
+      $('shareMsg').textContent = '候補から正しい曲をタップしてください';
+      $('shareMsg').className = 'msg warn';
+      $('shareList').innerHTML = cands.map(itemHtml).join('');
+      bindList($('shareList'), cands, 'shazam', s => { $('shareMsg').innerHTML = '✓ 送信しました：<b>' + esc(s.titleEn || s.title) + '</b>'; $('shareMsg').className = 'msg ok'; });
+    } else {
+      $('shareMsg').textContent = 'CADENCE に見つかりませんでした。下の検索で探すか、手入力で送ってください。';
+      $('shareMsg').className = 'msg ng';
+      // 手入力欄に、共有文の1行目を入れておく
+      $('manTitle').value = (p.get('title') || '').trim();
+    }
+  }
+  handleShare();
+
+  // ===== 検索 =====
+  let timer = null;
+  $('q').addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const q = norm($('q').value);
+      if (!q) { $('searchList').innerHTML = ''; return; }
+      try { await ready; } catch (e) { $('searchList').textContent = 'CADENCE を読み込めません'; return; }
+      const ws = q.split(' ').filter(Boolean);
+      const res = songs.filter(s => ws.every(w => s._all.includes(w))).slice(0, 30);
+      $('searchList').innerHTML = res.length ? res.map(itemHtml).join('') : '<div class="msg">見つかりません</div>';
+      bindList($('searchList'), res, 'search', s => {
+        $('q').value = ''; $('searchList').innerHTML = '<div class="msg ok">✓ 送信しました：' + esc(s.titleEn || s.title) + '</div>';
+      });
+    }, 200);
+  });
+
+  // ===== 手入力 =====
+  $('manSend').onclick = async () => {
+    const title = $('manTitle').value.trim(), artist = $('manArtist').value.trim();
+    if (!title) return;
+    await sendSong({ title, artist, source: 'manual' });
+    $('manTitle').value = ''; $('manArtist').value = '';
+  };
+
+  // ===== アプリとして追加できるように =====
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('share-sw.js').catch(() => {});
+</script>
+</body>
+</html>

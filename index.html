@@ -2032,7 +2032,17 @@
         strobeMs: 220,       // 光が消えるまでの時間（ミリ秒）
 
         // --- 今かかっている曲の表示（音楽認識サービス AudD → CADENCE で照合） ---
-        npService: 'acrcloud',  // 使う認識サービス：'acrcloud' = ACRCloud / 'audd' = AudD
+        npService: 'remote',    // 曲名の出し方：'remote' = スマホ（Shazamアプリ）から送る / 'acrcloud' = ACRCloud で自動認識 / 'audd' = AudD で自動認識
+        npRemoteUrl: 'share.html', // スマホで開く「曲名リモコン」のページ（このページと同じ場所）
+        npFirebase: {             // スマホとタブレットをつなぐ Firebase（ビンゴと同じもの。remote/nowPlaying を使う）
+            apiKey: "AIzaSyDNPT6qv47ku9PBYLm_9FDl-hY0sQqZHn8",
+            authDomain: "bnk2025-bingo.firebaseapp.com",
+            databaseURL: "https://bnk2025-bingo-default-rtdb.firebaseio.com",
+            projectId: "bnk2025-bingo",
+            storageBucket: "bnk2025-bingo.firebasestorage.app",
+            messagingSenderId: "127094139624",
+            appId: "1:127094139624:web:703cf76da95ba05154b75d"
+        },
         //   ACRCloud のホスト・アクセスキー・シークレットは、調整パネルの「APIキー」ボタンで入力
         //   （このタブレットにだけ保存され、ファイルには書かれない）
         npApiUrl: 'https://api.audd.io/',   // AudD の送り先
@@ -2107,6 +2117,7 @@
         npToggleBtn.textContent = on ? '曲名:ON' : '曲名:OFF';
     }
     showNpState();
+    if (CFG.npService === 'remote') document.getElementById('npKey').textContent = 'スマホ';
     npToggleBtn.addEventListener('click', e => {
         e.stopPropagation();
         try {
@@ -2117,6 +2128,11 @@
     });
     document.getElementById('npKey').addEventListener('click', e => {
         e.stopPropagation();
+        if (CFG.npService === 'remote') {
+            const url = new URL(CFG.npRemoteUrl, location.href).href;
+            prompt('スマホで次のページを開き、ホーム画面に追加してください。\n（Shazamアプリの「共有」から曲名を送れるようになります）', url);
+            return;
+        }
         const ask = (key, label, note) => {
             let cur = '';
             try { cur = localStorage.getItem(key) || ''; } catch (err) {}
@@ -2606,6 +2622,7 @@
         np.featAn = an;
         np.featBuf = new Float32Array(an.frequencyBinCount);
         npLoadCadence();
+        if (CFG.npService === 'remote') npRemoteInit();
     }
 
     // 今の音の特徴：12音（ド〜シ）の成分の割合＋6つの音域の割合
@@ -2790,9 +2807,15 @@
         }
         if (!program && !CFG.npShowUnknown) return { key, dur, shown: false };
         if (np.current && np.current.key === key) return { key, dur, shown: true, same: true };   // 同じ曲なら表示はそのまま
-        const hadText = np.el.textContent.trim() !== '';
-        np.current = { key, title, artist, program };
+        npDisplay(key, title, artist, program);
+        return { key, dur, shown: true, same: false, title, program };
+    }
+
+    // 左上に曲名・アーティスト名・プログラム名を出す（前の曲が出ていればフェードで切り替え）
+    function npDisplay(key, title, artist, program) {
         const el = np.el;
+        const hadText = el.style.opacity !== '0' && el.textContent.trim() !== '';
+        np.current = { key, title, artist, program };
         el.style.opacity = '0';
         setTimeout(() => {
             el.querySelector('.np-title').textContent = title;
@@ -2800,7 +2823,74 @@
             el.querySelector('.np-program').textContent = program;
             el.style.opacity = '1';
         }, hadText ? 600 : 0);
-        return { key, dur, shown: true, same: false, title, program };
+    }
+
+    // ---------- スマホ（Shazamアプリ）から曲名を受け取る ----------
+    //   スマホの「曲名リモコン」（share.html）が Firebase の remote/nowPlaying に書き込んだ曲を表示する
+    function npLoadScript(src) {
+        return new Promise((resolve, reject) => {
+            const sc = document.createElement('script');
+            sc.src = src; sc.onload = resolve; sc.onerror = () => reject(new Error(src));
+            document.head.appendChild(sc);
+        });
+    }
+    async function npRemoteInit() {
+        try {
+            npStatus('スマホと接続中…');
+            if (!window.firebase) {
+                await npLoadScript('https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js');
+                await npLoadScript('https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js');
+            }
+            if (!firebase.apps.length) firebase.initializeApp(CFG.npFirebase);
+            const db = firebase.database();
+            // タブレットがつながっていることをスマホに知らせる
+            db.ref('.info/connected').on('value', snap => {
+                if (snap.val() === true) {
+                    const me = db.ref('remote/visualizer');
+                    me.onDisconnect().update({ online: false });
+                    me.update({ online: true, at: firebase.database.ServerValue.TIMESTAMP });
+                    npStatus('スマホからの曲名を待っています');
+                } else {
+                    npStatus('スマホと接続中…');
+                }
+            });
+            const opened = Date.now();
+            db.ref('remote/nowPlaying').on('value', snap => {
+                const v = snap.val();
+                if (!v) return;
+                // ページを開く前に送られていた古い曲は出さない
+                if (!np.remoteSeen && v.ts && v.ts < opened - 60 * 1000) { np.remoteSeen = true; return; }
+                np.remoteSeen = true;
+                if (v.clear) {
+                    np.el.style.opacity = '0';
+                    np.current = null;
+                    npStatus('表示を消しました');
+                    return;
+                }
+                npRemoteShow(v);
+            });
+        } catch (e) {
+            console.warn(e);
+            npStatus('スマホと接続できません（' + e.message + '）');
+        }
+    }
+    function npRemoteShow(v) {
+        let title = v.title || '', artist = v.artist || '', program = '', key = v.key || (title + '|' + artist).toLowerCase();
+        const song = v.key && np.songs ? np.songs.find(s => s.key === v.key) : null;
+        if (song) {
+            title = song.titleEn || song.title;
+            artist = song.artistEn || song.artist;
+            program = npOldestProgram(song.programs);
+        } else if (np.index && title) {
+            const m = matchOne({ title, artist, swappable: false }, np.index);
+            if (m.match !== 'none' && m.song) {
+                title = m.song.titleEn || m.song.title; artist = m.song.artistEn || m.song.artist;
+                program = npOldestProgram(m.programs); key = m.song.key;
+            }
+        }
+        npStatus('スマホから：' + title + (program ? '（' + program + '）' : ''));
+        if (np.current && np.current.key === key && np.el.style.opacity !== '0') return;
+        npDisplay(key, title, artist, program);
     }
 
     // 毎フレーム：いつ認識するかを決める
@@ -2818,6 +2908,19 @@
         }
         if (!npEnabled()) {
             if (np.el.style.opacity !== '0') np.el.style.opacity = '0';
+            return;
+        }
+        if (CFG.npService === 'remote') {
+            // スマホから送られた曲を表示。音楽が止まったら隠し、音楽が戻ったらまた出す
+            if (!music && np.lastMusic) {
+                np.lastMusic = false;
+                clearTimeout(np.hideTimer);
+                np.hideTimer = setTimeout(() => { np.el.style.opacity = '0'; }, 8000);
+            } else if (music && !np.lastMusic) {
+                np.lastMusic = true;
+                clearTimeout(np.hideTimer);
+                if (np.current && np.el.style.opacity === '0') np.el.style.opacity = '1';
+            }
             return;
         }
         if (!music) {
