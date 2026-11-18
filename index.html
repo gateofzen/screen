@@ -19,7 +19,47 @@
             overflow: hidden;
         }
         
+        /* 背景（ミラーボール / レーザー） */
+        #bgLayer {
+            position: fixed;
+            inset: 0;
+            overflow: hidden;
+            pointer-events: none;
+            z-index: 0;
+        }
+        /* ミラーボール：床（奥に倒した平面）の上で光がゆっくり回る */
+        #bgLayer .floor  { position: absolute; transform-origin: 50% 50%; }
+        #bgLayer .bgMove { position: absolute; inset: 0; will-change: transform; }
+        #bgLayer .bgSet  { position: absolute; inset: 0; will-change: opacity; opacity: 0; }
+        #bgLayer canvas  { position: absolute; top: 0; left: 0; }
+        /* 個別に瞬く光（ロゴのマスの形。瞬きはGPU側のアニメーションで動くので軽い） */
+        #bgLayer .twk {
+            position: absolute;
+            opacity: 0;
+            will-change: opacity;
+            animation: twk var(--d) linear var(--dl) infinite;
+        }
+        #bgLayer .twk svg { width: 100%; height: 100%; display: block; overflow: visible; }
+        @keyframes twk {
+            0%   { opacity: 0; }
+            12%  { opacity: 1; }
+            35%  { opacity: 0; }
+            100% { opacity: 0; }
+        }
+
+
+        /* ストロボ：背景とロゴの間に置いた白い光（透明度だけ変えるのでGPU側で処理され軽い） */
+        #strobe {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+            opacity: 0;
+            will-change: opacity;
+        }
+
         #visualizer-container {
+            z-index: 1;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -1905,6 +1945,7 @@
         <button id="offsetMinus">−</button>
         <span id="offsetLabel">0ms</span>
         <button id="offsetPlus">＋</button>
+        <button id="bgToggle" style="min-width:110px">背景</button>
     </div>
 
     <script>
@@ -1932,15 +1973,41 @@
         cellsEnabled: true,  // マスの光のON/OFF
         cellFillCenter: false, // 中央の大きな八角形も光らせるか
         ballTint: 0.3,       // 光に淡い色が混じる割合（0 = すべて白, 1 = すべて色付き）
-        beatFlashMin: 3,     // 拍の頭でキラッと光るマスの数（静かな時）
-        beatFlashMax: 8,     // 同（低音が大きい時）
+        beatFlashMin: 6,     // 拍の頭でキラッと光るマスの数（静かな時）
+        beatFlashMax: 14,    // 同（低音が大きい時）
         beatFlashDecay: 0.12,// 拍の頭の光が消える速さ（秒。小さいほど鋭い）
-        sparkleRate: 0.8,    // 拍の間のランダムな瞬き（1マスあたり1秒に何回。音が大きい時）
+        sparkleRate: 1.6,    // 拍の間のランダムな瞬き（1マスあたり1秒に何回。音が大きい時）
         sparkleDecay: 0.07,  // 瞬きが消える速さ（秒）
         glintLights: [-135, 45], // 固定の光源の方向（度。0 = 右, -90 = 上）。回転するマスがここを通ると光る
         glintWidth: 9,       // 光源の前を通る時に光る範囲（度）
-        glintStrength: 0.8,  // その光の強さ（0〜1）
-        facetBase: 0.06,     // 音楽が鳴っている間、マスをうっすら見せておく濃さ（0 = 真っ黒）
+        glintStrength: 0.3,  // その光の強さ（0〜1）
+        facetBase: 0,        // 音楽が鳴っている間、マスをうっすら見せておく濃さ（0 = 真っ黒）
+
+        // --- 背景（調整パネルのボタンで「ミラーボール ⇔ なし」を切り替え） ---
+        bgType: 'mirror',    // 'mirror' = ミラーボール / 'off' = なし（初期値。パネルで変えると端末に保存）
+
+        // ミラーボール：ロゴのミラーボールから床に映った光（光の形はロゴのマスの形）
+        mbSecondsPerRev: 60, // 床の光が1周するのにかかる秒数（ロゴの回転とは独立。大きいほどゆっくり）
+        mbSpots: 260,        // 床に映る光の数（1組あたり。床の広さ900pxの時の数で、床が広いほど自動で増やす）
+        mbSets: 2,           // 光の組の数。拍ごとに交互にフラッシュする（4拍に1回は全部同時）
+        mbTwinkleSpots: 40,  // 上とは別に、常にチカチカ瞬く光の数（0 で無し）
+        mbSpotSize: [22, 50],// 光の大きさ（px、床の上での大きさ。手前ほど大きく、奥ほど小さく見える）
+        mbFloorTilt: 42,     // 床の傾き（度）。大きいほど床を浅い角度から見る感じになる
+        mbFloorRadius: 1250, // 床の広さの上限（半径px）。実際の広さは画面の四隅まで届くよう自動で計算する
+        mbFloorY: 0.42,      // 床の光の回転の中心の、画面上の高さ（0 = 上端, 1 = 下端）。小さいほど上
+        mbTint: 0.15,        // 淡い色が混じる割合
+        mbBase: 0,           // 拍と拍の間の明るさ（0 = 拍の瞬間だけ光る）
+        mbFlash: 1,          // 拍の瞬間の明るさ
+        mbFlashDecay: 0.15,  // 拍の光が消える速さ（秒。小さいほど鋭いフラッシュ）
+
+        // --- ストロボ（拍の頭で、ロゴの周りの空間がパッと白く光る） ---
+        strobeEnabled: true,
+        strobeBeat: 0.18,    // 毎拍の光の強さ（0〜1）
+        strobeBar: 0.45,     // 4拍に1回の光の強さ
+        strobeMs: 220,       // 光が消えるまでの時間（ミリ秒）
+
+        // --- 動き始め ---
+        startBpm: 125,       // BPMが確定する前（曲の始まり）に、最初のキックから使う仮のテンポ
 
         // --- タイミング補正 ---
         // マイク入力・画面・プロジェクターの遅れを打ち消すため、動きをこの分だけ先回りさせる（ミリ秒）
@@ -1951,13 +2018,19 @@
         bpmMin: 80,        // 推定するBPMの範囲（この範囲に倍・半分で折りたたむ）
         bpmMax: 180,
         bpmWindowMs: 8000, // 直近何ミリ秒分のキックからBPMを推定するか
-        bpmMinKicks: 6,    // BPMを出すのに必要なキックの数
+        bpmMinKicks: 4,    // BPMを出すのに必要なキックの数
         bpmLostMs: 3000,   // キックがこの時間なければ「曲間」とみなして拡大を止める
 
         // --- キック検出 ---
         kickRatio: 0.5,    // 直近の最大キックに対してこの割合以上の「跳ね上がり」でキックとみなす
         kickMinGapMs: 180  // キック判定の最短間隔（ミリ秒）
     };
+
+    // 背景の種類（調整パネルのボタンで切り替え。端末に保存）
+    try {
+        const savedBg = localStorage.getItem('fcv-bgType');
+        if (savedBg === 'mirror' || savedBg === 'off') CFG.bgType = savedBg;
+    } catch (e) {}
 
     // 補正値は端末に保存（会場で一度合わせれば次回も使える）
     try {
@@ -1979,6 +2052,18 @@
     document.getElementById('offsetMinus').addEventListener('click', e => { e.stopPropagation(); changeOffset(-10); });
     document.getElementById('offsetPlus').addEventListener('click', e => { e.stopPropagation(); changeOffset(10); });
     syncPanel.addEventListener('dblclick', e => e.stopPropagation());
+    const bgToggle = document.getElementById('bgToggle');
+    const BG_NAMES = { mirror: '背景:ミラーボール', off: '背景:なし' };
+    function showBgState() { bgToggle.textContent = BG_NAMES[CFG.bgType]; }
+    showBgState();
+    bgToggle.addEventListener('click', e => {
+        e.stopPropagation();
+        const order = ['mirror', 'off'];
+        CFG.bgType = order[(order.indexOf(CFG.bgType) + 1) % order.length];
+        showBgState();
+        try { localStorage.setItem('fcv-bgType', CFG.bgType); } catch (err) {}
+        if (spinAnim) createBackground();
+    });
     document.addEventListener('dblclick', () => {
         panelVisible = !panelVisible;
         syncPanel.style.display = panelVisible ? 'flex' : 'none';
@@ -2019,12 +2104,17 @@
             else {
                 // ★重要: 「static-text」クラスを付けて、CSSで強制的に黒くする
                 path.classList.add('static-text');
+                // 背景の光を出す時は、黒い四角や（回転しない）黒いパーツが光を隠すので非表示に
+                path.style.display = 'none';
                 // 念のためJSでも黒に設定
                 path.style.fill = '#000000';
                 // 中抜き用属性を明示的にセット
                 path.setAttribute('fill-rule', 'evenodd');
             }
         });
+
+        // 背景の光を出す時は、元SVGの黒い四角い背景を消す（光を隠してしまうため）
+        svgElement.querySelectorAll(':scope > rect').forEach(r => r.style.display = 'none');
 
         // 丸ロゴを、同じ座標系の別SVG（専用レイヤー）に移す
         if (circleLogo) {
@@ -2061,6 +2151,14 @@
             logoLayer = document.createElement('div');
             logoLayer.id = 'logoLayer';
             const layerSvg = mkSvg();
+
+            // 背景の光の粒がロゴの穴から透けないよう、円の内側を黒で塗る（ロゴ自体がミラーボールに見える）
+            {
+                const disc = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                disc.setAttribute('d', circleLogo.getAttribute('d').trim().split(/(?=M\s)/)[0]);
+                disc.style.fill = '#000000';
+                layerSvg.appendChild(disc);
+            }
 
             // 幾何学模様のマス：丸ロゴのパスの「くり抜き部分」を1つずつ取り出し、
             // 色付きの図形としてロゴの線の下に敷く（ロゴと一緒に回転する）
@@ -2103,6 +2201,223 @@
     let spinAnim = null, pulseAnim = null;
     const BEAT_UNIT = 1000;
 
+    // ロゴの回転の速度を設定（「1拍 = 1000」の時間単位なので、BPM に一致する。床の光は独立してゆっくり回る）
+    function setSpinRate(r) {
+        spinAnim.playbackRate = r;
+    }
+
+    // ===================== 背景 =====================
+    let mirrorAnim = null, mirrorRate = 0, mirrorRateShown = -1, lastMirrorAdjust = 0;
+    let bgParts = [];        // 毎フレーム明るさを変える要素 { el, kind, shown }
+    let bgFlash = 0, bgBeatCount = 0;
+
+    // ロゴ（ミラーボール）の画面上の中心と半径
+    function ballGeometry() {
+        const rect = visualizerContainer.getBoundingClientRect();
+        const k = rect.width / 613;
+        return { cx: rect.left + 311.63 * k, cy: rect.top + rect.height / 2 + (240.88 - 306) * k, r: 179 * k };
+    }
+    function hslToRgb(h, s, l) {
+        const f = n => {
+            const k = (n + h / 30) % 12;
+            return Math.round(255 * (l - s * Math.min(l, 1 - l) * Math.max(-1, Math.min(k - 3, 9 - k, 1))));
+        };
+        return [f(0), f(8), f(4)];
+    }
+    function spotColor(tint) {
+        return Math.random() < tint ? hslToRgb(Math.random() * 360, 0.9, 0.8).join(',') : '255,255,255';
+    }
+
+    // ---------- ミラーボール：ロゴのマスの形の光を床に映す ----------
+    let cellShapes = null;   // ロゴのマスの形 [{ d, path2d, cx, cy, bx, by, bw, bh, size }]
+    function getCellShapes() {
+        if (cellShapes) return cellShapes;
+        const subs = circleLogo.getAttribute('d').trim().split(/(?=M\s)/).slice(1)
+            .map(x => x.trim()).filter(x => !x.startsWith('M 210.36 240.90'));   // 外周と中央の八角形は除く
+        const tmpSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        tmpSvg.style.position = 'absolute'; tmpSvg.style.visibility = 'hidden';
+        document.body.appendChild(tmpSvg);
+        cellShapes = subs.map(d => {
+            const el = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            el.setAttribute('d', d);
+            tmpSvg.appendChild(el);
+            const bb = el.getBBox();
+            return { d, path2d: new Path2D(d), cx: bb.x + bb.width / 2, cy: bb.y + bb.height / 2,
+                     bx: bb.x, by: bb.y, bw: bb.width, bh: bb.height, size: Math.max(bb.width, bb.height) };
+        });
+        tmpSvg.remove();
+        return cellShapes;
+    }
+
+    // 床の上に、ロゴのマスの形の光をばらまいて描く
+    function drawFloorSpots(ctx, R, count) {
+        const shapes = getCellShapes();
+        for (let i = 0; i < count; i++) {
+            const r = R * (0.1 + 0.88 * Math.sqrt(Math.random()));   // 床の上に均等に（ミラーボールの真下は空ける）
+            const th = Math.random() * Math.PI * 2;
+            const sh = shapes[Math.floor(Math.random() * shapes.length)];
+            const size = CFG.mbSpotSize[0] + Math.random() * (CFG.mbSpotSize[1] - CFG.mbSpotSize[0]);
+            const k = size / sh.size;
+            const color = spotColor(CFG.mbTint);
+            ctx.save();
+            ctx.translate(R + Math.cos(th) * r, R + Math.sin(th) * r);
+            ctx.rotate(th + Math.PI / 2 + (Math.random() - 0.5) * 0.6);
+            ctx.scale(k, k);
+            ctx.translate(-sh.cx, -sh.cy);
+            ctx.shadowColor = `rgba(${color},0.9)`;
+            ctx.shadowBlur = 10;
+            ctx.fillStyle = `rgba(${color},${(0.75 + Math.random() * 0.25).toFixed(2)})`;
+            ctx.fill(sh.path2d, 'evenodd');
+            ctx.restore();
+        }
+    }
+
+    function buildMirror(bg, vw, vh) {
+        const ball = ballGeometry();
+        const P = 1600, tilt = CFG.mbFloorTilt;
+        const fx = ball.cx, fy = vh * CFG.mbFloorY;
+        // 床の半径：画面の四隅が床の上のどこに当たるかを逆算し、いちばん遠い隅まで届く大きさにする
+        //   （ただし手前側がカメラ（視点）を越えない範囲・上限 mbFloorRadius まで）
+        const tr = tilt * Math.PI / 180, ct = Math.cos(tr), st = Math.sin(tr);
+        let need = 0;
+        for (const [sx, sy] of [[0, 0], [vw, 0], [0, vh], [vw, vh]]) {
+            const X = sx - fx, Y = sy - fy;                    // 画面上の位置（床の中心から）
+            const Yf = Y * P / (P * ct + Y * st);               // 床の上での奥行き方向の位置
+            const k = P / (P - Yf * st);                        // その位置での見かけの拡大率
+            need = Math.max(need, Math.hypot(X / k, Yf));
+        }
+        const R = Math.round(Math.min(CFG.mbFloorRadius, 0.85 * P / st, need * 1.04));
+        const floor = document.createElement('div');
+        floor.className = 'floor';
+        Object.assign(floor.style, { left: (fx - R) + 'px', top: (fy - R) + 'px', width: (2 * R) + 'px', height: (2 * R) + 'px',
+                                     transform: `perspective(${P}px) rotateX(${tilt}deg)` });
+        const move = document.createElement('div');
+        move.className = 'bgMove';
+        floor.appendChild(move);
+
+        // 光（組ごとに1枚のキャンバスへ最初に1回だけ描く。メモリを抑えるため最大2048pxで描いて拡大表示）
+        //   拍ごとに組を交互にフラッシュさせるので、光る場所が毎拍変わる
+        const scale = Math.min(1, 2048 / (2 * R));
+        const count = Math.round(CFG.mbSpots * (R / 900) * (R / 900));   // 床が広いほど数を増やして密度をそろえる
+        for (let g = 0; g < Math.max(1, CFG.mbSets); g++) {
+            const set = document.createElement('div');
+            set.className = 'bgSet';
+            const cv = document.createElement('canvas');
+            cv.width = Math.round(2 * R * scale); cv.height = cv.width;
+            cv.style.width = (2 * R) + 'px'; cv.style.height = (2 * R) + 'px';
+            const ctx = cv.getContext('2d');
+            ctx.scale(scale, scale);
+            drawFloorSpots(ctx, R, count);
+            set.appendChild(cv);
+            move.appendChild(set);
+            bgParts.push({ el: set, kind: 'mirrorMain', group: g, flash: 0, shown: -1 });
+        }
+
+        // 個別に瞬く光（ロゴのマスの形の小さなSVG。瞬きはGPU側のアニメーション）
+        const tw = document.createElement('div');
+        tw.style.position = 'absolute'; tw.style.inset = '0';
+        const shapes = getCellShapes();
+        for (let i = 0; i < CFG.mbTwinkleSpots; i++) {
+            const sh = shapes[Math.floor(Math.random() * shapes.length)];
+            const r = R * (0.1 + 0.88 * Math.sqrt(Math.random()));
+            const th = Math.random() * Math.PI * 2;
+            const size = (CFG.mbSpotSize[0] + Math.random() * (CFG.mbSpotSize[1] - CFG.mbSpotSize[0])) * 1.1;
+            const k = size / sh.size;
+            const w = sh.bw * k, h = sh.bh * k;
+            const el = document.createElement('div');
+            el.className = 'twk';
+            Object.assign(el.style, {
+                width: w + 'px', height: h + 'px',
+                left: (R + Math.cos(th) * r - w / 2) + 'px', top: (R + Math.sin(th) * r - h / 2) + 'px',
+                transform: `rotate(${th + Math.PI / 2}rad)`
+            });
+            const color = spotColor(CFG.mbTint);
+            el.innerHTML = `<svg viewBox="${sh.bx} ${sh.by} ${sh.bw} ${sh.bh}"><path d="${sh.d}" fill="rgb(${color})" fill-rule="evenodd"/></svg>`;
+            el.style.setProperty('--d', (0.35 + Math.random() * 1.1).toFixed(2) + 's');
+            el.style.setProperty('--dl', (-Math.random() * 2).toFixed(2) + 's');
+            tw.appendChild(el);
+        }
+        move.appendChild(tw);
+        bgParts.push({ el: tw, kind: 'mirrorTwinkle', shown: -1 });
+        bg.appendChild(floor);
+
+        // ロゴの回転とは独立した、ゆっくりした回転（速さは音楽の有無で 0〜1 倍に変える）
+        const dir = CFG.direction >= 0 ? 1 : -1;
+        mirrorAnim = move.animate([{ transform: 'rotate(0deg)' }, { transform: `rotate(${360 * dir}deg)` }],
+            { duration: CFG.mbSecondsPerRev * 1000, iterations: Infinity, easing: 'linear' });
+        mirrorAnim.playbackRate = mirrorRate;
+        mirrorRateShown = mirrorRate;
+    }
+
+    function createBackground() {
+        const old = document.getElementById('bgLayer');
+        if (old) old.remove();
+        if (mirrorAnim) mirrorAnim.cancel();
+        bgParts = []; mirrorAnim = null;
+        if (CFG.bgType === 'off') return;
+
+        const vw = window.innerWidth, vh = window.innerHeight;
+        const bg = document.createElement('div');
+        bg.id = 'bgLayer';
+        document.body.insertBefore(bg, document.body.firstChild);
+        buildMirror(bg, vw, vh);
+    }
+
+    // 拍の頭で呼ばれる
+    // ストロボ：ロゴ（ミラーボール）を中心に、白い光がパッと広がってすぐ消える
+    let strobeEl = null;
+    function strobeFlash(strength) {
+        if (!CFG.strobeEnabled || strength <= 0) return;
+        if (!strobeEl) {
+            strobeEl = document.createElement('div');
+            strobeEl.id = 'strobe';
+            document.body.insertBefore(strobeEl, visualizerContainer);
+        }
+        const b = ballGeometry();
+        strobeEl.style.background = `radial-gradient(circle at ${b.cx}px ${b.cy}px, rgba(255,255,255,0.95) 0%, ` +
+            `rgba(255,255,255,0.35) ${Math.round(b.r * 1.6)}px, rgba(255,255,255,0.08) ${Math.round(b.r * 3.2)}px, rgba(255,255,255,0) 100%)`;
+        if (strobeEl._a) strobeEl._a.cancel();
+        strobeEl._a = strobeEl.animate([{ opacity: strength }, { opacity: 0 }],
+            { duration: CFG.strobeMs, easing: 'cubic-bezier(0.1, 0.7, 0.3, 1)', fill: 'forwards' });
+    }
+
+    function bgOnBeat() {
+        bgFlash = 1;
+        bgBeatCount++;
+        // 床の光：拍ごとに組を交互に、4拍に1回は全部まとめてフラッシュ
+        const sets = bgParts.filter(p => p.kind === 'mirrorMain');
+        sets.forEach((p, g) => {
+            if (bgBeatCount % 4 === 1 || g === bgBeatCount % sets.length) p.flash = 1;
+        });
+        strobeFlash(bgBeatCount % 4 === 1 ? CFG.strobeBar : CFG.strobeBeat);
+    }
+
+    // 毎フレーム：明るさ・ミラーボールの回転速度の調整（必要な時だけ書き換える）
+    function updateBackground(now, dt, music) {
+        const decay = Math.exp(-dt / CFG.mbFlashDecay);
+        bgFlash *= decay;
+        if (!mirrorAnim) return;
+        // 床の光の回転：音楽が始まったらすぐ（約0.3秒）、止まったらゆっくり（約1.5秒）止める
+        const targetRate = music > 0.5 ? 1 : 0;
+        mirrorRate += (targetRate - mirrorRate) * (1 - Math.exp(-dt / (targetRate > mirrorRate ? 0.1 : 0.5)));
+        if (Math.abs(targetRate - mirrorRate) < 0.01) mirrorRate = targetRate;
+        if (mirrorRate !== mirrorRateShown && (now - lastMirrorAdjust > 100 || mirrorRate === targetRate)) {
+            lastMirrorAdjust = now;
+            mirrorAnim.playbackRate = mirrorRate;
+            mirrorRateShown = mirrorRate;
+        }
+        for (const p of bgParts) {
+            if (p.kind === 'mirrorMain') {
+                p.flash *= decay;
+                const v = music * Math.min(1, CFG.mbBase + CFG.mbFlash * p.flash);
+                if (Math.abs(v - p.shown) > 0.01) { p.el.style.opacity = v.toFixed(3); p.shown = v; }
+            } else if (p.kind === 'mirrorTwinkle') {
+                const on = music > 0.3 ? 1 : 0;
+                if (on !== p.shown) { p.el.style.visibility = on ? 'visible' : 'hidden'; p.shown = on; }
+            }
+        }
+    }
+
     function createAnimations() {
         const beatsPerRev = 360 / CFG.degPerBeat;
         const turn = 360 * (CFG.direction >= 0 ? 1 : -1);
@@ -2131,7 +2446,7 @@
     let spinActive = false;   // BPMに合わせて回転中か
     function setIdle() {
         const beatsPerRev = 360 / CFG.degPerBeat;
-        spinAnim.playbackRate = CFG.idleSpeed > 0 ? beatsPerRev * CFG.idleSpeed / 360 : 0;
+        setSpinRate(CFG.idleSpeed > 0 ? beatsPerRev * CFG.idleSpeed / 360 : 0);
         // 拡大は「元の大きさ」の位置で止めておく
         if (pulseAnim) {
             pulseAnim.pause();
@@ -2185,7 +2500,9 @@
     }
 
     function beatFlash(loud) {
+        bgOnBeat();
         const n = Math.round(CFG.beatFlashMin + (CFG.beatFlashMax - CFG.beatFlashMin) * Math.min(1, loud * 1.5));
+        if (!cells.length) return;
         for (let k = 0; k < n; k++) flashCell(Math.floor(Math.random() * cells.length), 1, CFG.beatFlashDecay);
     }
 
@@ -2198,12 +2515,11 @@
     }
 
     function updateCells(now, dt, loud) {
-        if (!cells.length) return;
         if (!cellState) initCells();
 
         // 音楽が鳴っているか：BPMが取れている、または直近にキックがある
         const musicOn = (bpm !== null) || (now - lastKick < 1500 && lastKick > 0);
-        musicLevel += ((musicOn ? 1 : 0) - musicLevel) * (1 - Math.exp(-dt / (musicOn ? 0.3 : 0.8)));
+        musicLevel += ((musicOn ? 1 : 0) - musicLevel) * (1 - Math.exp(-dt / (musicOn ? 0.06 : 0.8)));
 
         if (musicOn) {
             // ① 拍の頭でキラッ
@@ -2252,6 +2568,7 @@
             if (Math.abs(v - st.shown) > 0.01) { cells[i].style.opacity = v.toFixed(3); st.shown = v; }
             if (color !== st.shownColor && v > 0.02) { cells[i].style.fill = color; st.shownColor = color; }
         }
+        updateBackground(now, dt, musicLevel);
     }
 
     function estimateBpm(now) {
@@ -2320,43 +2637,36 @@
     let lastAdjust = 0, lastSpinAdjust = 0;
     function steerAnimations(now) {
         if (!spinAnim) return;
-        if (bpm === null || beatRef === null) {
-            // 音楽がない：拡大はお休み、回転は約1.5秒かけてなめらかに減速（idleSpeed まで）
-            if (pulseRunning && pulseAnim) {
-                pulseAnim.pause();
-                pulseAnim.currentTime = BEAT_UNIT * Math.max(1, CFG.pulseEvery) * 0.7;
-                pulseRunning = false;
-            }
-            if (now - lastSpinAdjust > 100) {
-                lastSpinAdjust = now;
-                const beatsPerRev = 360 / CFG.degPerBeat;
-                const idleRate = CFG.idleSpeed > 0 ? beatsPerRev * CFG.idleSpeed / 360 : 0;
-                const cur = spinAnim.playbackRate;
-                if (Math.abs(cur - idleRate) > 0.001) {
-                    let next = idleRate + (cur - idleRate) * 0.8;
-                    if (Math.abs(next - idleRate) < 0.02) next = idleRate;
-                    spinAnim.playbackRate = next;
-                }
-            }
-            spinActive = false;
-            return;
+        const hasBpm = bpm !== null && beatRef !== null;
+        const kicking = lastKick > 0 && now - lastKick < 1500;   // 直近にキックがある（曲が鳴っている）
+        if (!hasBpm && pulseRunning && pulseAnim) {
+            pulseAnim.pause();
+            pulseAnim.currentTime = BEAT_UNIT * Math.max(1, CFG.pulseEvery) * 0.7;
+            pulseRunning = false;
         }
-        const P = 60000 / bpm;
-        const baseRate = BEAT_UNIT / P;   // 1拍で degPerBeat 度回る速度
-
-        // --- 回転：BPMに比例した一定速度 ---
-        //   速度を変える時は一気に変えず、約1秒かけて段階的に近づける（曲の切り替わりでガクッとしないように）
-        //   速度の変更はごく小さなずれ（1%未満）では行わない（変更の回数を減らしてなめらかに）
-        if (now - lastSpinAdjust > 200) {
+        // 目標の回転速度：BPMが取れていればそのBPM / 取れていなくてもキックがあれば仮のテンポで即スタート / 無音なら停止
+        const beatsPerRev = 360 / CFG.degPerBeat;
+        const idleRate = CFG.idleSpeed > 0 ? beatsPerRev * CFG.idleSpeed / 360 : 0;
+        const target = hasBpm ? BEAT_UNIT / (60000 / bpm)
+                     : kicking ? BEAT_UNIT / (60000 / CFG.startBpm)
+                     : idleRate;
+        if (now - lastSpinAdjust > 80) {
             lastSpinAdjust = now;
             const cur = spinAnim.playbackRate;
-            const diff = baseRate - cur;
-            if (Math.abs(diff) > baseRate * 0.01) {
-                const step = Math.max(Math.abs(cur) * 0.25, baseRate * 0.12);
-                spinAnim.playbackRate = cur + Math.max(-step, Math.min(step, diff));
+            const diff = target - cur;
+            if (Math.abs(diff) > Math.max(target, cur) * 0.01 + 1e-4) {
+                let next;
+                if (target > cur) next = cur + diff * 0.6;            // 加速：約0.3秒で目標へ
+                else if (target > 0) next = cur + diff * 0.5;         // テンポの修正
+                else next = cur * 0.8;                                // 停止：約1.5秒かけて減速
+                if (Math.abs(target - next) < Math.max(target, 0.05) * 0.03) next = target;
+                setSpinRate(next);
             }
-            spinActive = true;
         }
+        spinActive = hasBpm || kicking;
+        if (!hasBpm) return;
+        const P = 60000 / bpm;
+        const baseRate = BEAT_UNIT / P;
 
         if (!CFG.pulseEnabled || !pulseAnim) return;
 
@@ -2396,6 +2706,12 @@
             return;
         }
         if (circleLogo) createAnimations();
+        if (circleLogo) createBackground();
+        let resizeTimer = null;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(createBackground, 300);
+        });
 
         try {
             await requestWakeLock();
