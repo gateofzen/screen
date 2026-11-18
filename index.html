@@ -141,6 +141,26 @@
             user-select: none;
             -webkit-user-select: none;
         }
+        /* 今かかっている曲（左上） */
+        #nowPlaying {
+            position: fixed;
+            left: 3vw;
+            top: 3vh;
+            z-index: 150;
+            color: #fff;
+            font-family: Arial, 'Helvetica Neue', sans-serif;
+            font-size: clamp(16px, 3.2vmin, 44px);
+            line-height: 1.3;
+            letter-spacing: 0.02em;
+            text-shadow: 0 0 8px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.9);
+            opacity: 0;
+            transition: opacity 0.6s ease;
+            pointer-events: none;
+            max-width: 60vw;
+        }
+        #nowPlaying div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        #npStatus { max-width: 22vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
         #syncPanel button {
             min-width: 40px;
             height: 34px;
@@ -1939,6 +1959,7 @@
     </div>
 
     <button id="startButton">SYSTEM START</button>
+    <div id="nowPlaying"><div class="np-title"></div><div class="np-artist"></div><div class="np-program"></div></div>
     <div id="syncPanel">
         <span id="bpmLabel">BPM --</span>
         <span>｜補正</span>
@@ -1946,6 +1967,9 @@
         <span id="offsetLabel">0ms</span>
         <button id="offsetPlus">＋</button>
         <button id="bgToggle" style="min-width:110px">背景</button>
+        <button id="npToggle" style="min-width:72px">曲名</button>
+        <button id="npKey" style="min-width:64px">APIキー</button>
+        <span id="npStatus"></span>
         <button id="bingoLink" style="min-width:72px">ビンゴへ</button>
     </div>
 
@@ -2007,6 +2031,26 @@
         strobeBar: 0.45,     // 4拍に1回の光の強さ
         strobeMs: 220,       // 光が消えるまでの時間（ミリ秒）
 
+        // --- 今かかっている曲の表示（音楽認識サービス AudD → CADENCE で照合） ---
+        npService: 'acrcloud',  // 使う認識サービス：'acrcloud' = ACRCloud / 'audd' = AudD
+        //   ACRCloud のホスト・アクセスキー・シークレットは、調整パネルの「APIキー」ボタンで入力
+        //   （このタブレットにだけ保存され、ファイルには書かれない）
+        npApiUrl: 'https://api.audd.io/',   // AudD の送り先
+        npCadenceBase: 'https://gateofzen.github.io/feelcycle-setlist/',  // CADENCE の公開URL（データをここから読む）
+        npClipSec: 10,       // 認識に使う録音の長さ（秒）。AudD は 12 秒まで
+        npStartDelaySec: 3,  // 音楽が始まってから最初に認識するまでの秒数
+        npIntervalSec: 30,   // 定期確認の間隔（秒）。曲の切り替わりを見逃した時の保険。短いほど回数（費用）が増える
+        npRetrySec: 4,       // 認識できなかった時、再挑戦するまでの秒数（3回続けて失敗したら3倍に延ばす）
+        npTimeoutSec: 15,    // 認識サービスから応答が無い時に打ち切るまでの秒数
+        npAfterEndSec: 8,    // 曲の残り時間から計算した「曲の終わり」の何秒後に確認するか（DJのつなぎの分）
+        npChangeThreshold: 0.06, // 音の雰囲気（キー・音域のバランス）の変化がこれを超えたら新しい曲の候補（パネルの「変化」の値で調整）
+        npChangeHoldSec: 3,  // 変化がこの秒数続いたら、すぐ確認する
+        npChangeWindow: 6,   // 「今の雰囲気」を何秒の平均で見るか（長いほど曲の中のコード進行に惑わされにくいが、気づくのが遅れる）
+        npRefWindow: 45,     // 「この曲の雰囲気」がどのくらいゆっくり追従するか（秒）
+        npMinGapSec: 20,     // 雰囲気の変化で確認する時、前回の確認からあける最低秒数
+        npLoudLevel: 0.25,   // キックが聞こえなくても、低音の大きさがこれを超えていれば「音楽が鳴っている」とみなす
+        npShowUnknown: true, // CADENCE に無い曲も、曲名・アーティスト名だけ表示するか
+
         // --- 調整パネルの「ビンゴへ」ボタンのリンク先 ---
         bingoUrl: 'https://gateofzen.github.io/bnk2025-bingo/host.html',
 
@@ -2056,6 +2100,43 @@
     document.getElementById('offsetMinus').addEventListener('click', e => { e.stopPropagation(); changeOffset(-10); });
     document.getElementById('offsetPlus').addEventListener('click', e => { e.stopPropagation(); changeOffset(10); });
     syncPanel.addEventListener('dblclick', e => e.stopPropagation());
+    // 曲名表示のON/OFF と APIキーの入力
+    const npToggleBtn = document.getElementById('npToggle');
+    function showNpState() {
+        const on = (() => { try { return localStorage.getItem('fcv-npEnabled') !== '0'; } catch (e) { return true; } })();
+        npToggleBtn.textContent = on ? '曲名:ON' : '曲名:OFF';
+    }
+    showNpState();
+    npToggleBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        try {
+            const on = localStorage.getItem('fcv-npEnabled') !== '0';
+            localStorage.setItem('fcv-npEnabled', on ? '0' : '1');
+        } catch (err) {}
+        showNpState();
+    });
+    document.getElementById('npKey').addEventListener('click', e => {
+        e.stopPropagation();
+        const ask = (key, label, note) => {
+            let cur = '';
+            try { cur = localStorage.getItem(key) || ''; } catch (err) {}
+            const v = prompt(label + (note ? '\n' + note : '') + '\n（このタブレットにだけ保存されます）', cur);
+            if (v === null) return false;                       // キャンセル
+            try { localStorage.setItem(key, v.trim()); } catch (err) {}
+            return true;
+        };
+        if (CFG.npService === 'audd') {
+            ask('fcv-auddToken', 'AudD の APIキー（api_token）');
+            return;
+        }
+        // ACRCloud：コンソールのプロジェクト画面に表示される3つの値
+        if (!ask('fcv-acrHost', '① ACRCloud の Host', '例: identify-ap-southeast-1.acrcloud.com')) return;
+        if (!ask('fcv-acrKey', '② ACRCloud の Access Key')) return;
+        if (!ask('fcv-acrSecret', '③ ACRCloud の Access Secret')) return;
+        ask('fcv-acrProxy', '④ 中継用 Cloudflare Worker の URL（空欄のままで OK）',
+            '「通信エラー」が出る時だけ、Worker の URL を入れてください');
+    });
+
     // ビンゴのページへ移動（同じタブで開く。戻る操作でこの画面に戻れる）
     document.getElementById('bingoLink').addEventListener('click', e => {
         e.stopPropagation();
@@ -2427,6 +2508,375 @@
         }
     }
 
+    // ===================== 今かかっている曲の表示（音楽認識 → CADENCE で照合） =====================
+    // マイクの音を数秒録音して音楽認識サービス（AudD）に送り、返ってきた曲名・アーティスト名を
+    // CADENCE のデータと照合して、曲名・アーティスト名・プログラム名を画面左上に表示する。
+    //
+    // 曲の切り替わりの見つけ方（DJミックスではBPMが変わらないので、BPMには頼らない）
+    //   ① 曲の残り時間から予測：AudD が返す「曲のどの位置を聞いたか」と CADENCE の曲の長さから、
+    //      曲が終わる頃を計算して、その少し後に確認する
+    //   ② 音の雰囲気の変化：曲のキー（和音の成分）と音域のバランスを常に測り、大きく変わったらすぐ確認する
+    //   ③ 定期確認：①②で捉えられない時のために、一定間隔でも確認する
+    const np = {
+        ctx: null, proc: null, capturing: false, chunks: [], capLen: 0,
+        busy: false, nextDue: 0, lastMusic: false, lastLoud: 0,
+        failStreak: 0, lastDoneAt: 0, reason: '',
+        current: null,            // 表示中の曲 { key, title, artist, program }
+        songs: null, index: null, progOrder: null, trackDur: null, dataError: '',
+        el: null, statusEl: null, hideTimer: null, statusText: '',
+        // 音の雰囲気（②）
+        featAn: null, featBuf: null, featAt: 0, cur: null, ref: null, change: 0, changeSince: 0
+    };
+    function npToken() { try { return localStorage.getItem('fcv-auddToken') || ''; } catch (e) { return ''; } }
+    function npEnabled() { try { return localStorage.getItem('fcv-npEnabled') !== '0'; } catch (e) { return true; } }
+    function npStatus(text) { np.statusText = text; }
+
+    // CADENCE のデータ（songs.json / programs.json / 照合エンジン matcher.js）を読み込む
+    async function npLoadCadence() {
+        try {
+            const base = CFG.npCadenceBase.replace(/\/?$/, '/');
+            await new Promise((resolve, reject) => {
+                if (typeof matchOne === 'function') return resolve();
+                const sc = document.createElement('script');
+                sc.src = base + 'matcher.js';
+                sc.onload = resolve; sc.onerror = () => reject(new Error('matcher.js'));
+                document.head.appendChild(sc);
+            });
+            const [songs, programs] = await Promise.all([
+                fetch(base + 'songs.json').then(r => { if (!r.ok) throw new Error('songs.json ' + r.status); return r.json(); }),
+                fetch(base + 'programs.json').then(r => { if (!r.ok) throw new Error('programs.json ' + r.status); return r.json(); })
+            ]);
+            np.songs = songs;
+            np.index = buildIndex(songs);
+            // CADENCE のプログラム一覧はおおむね新しい順に並んでいる → 後ろほど古いとみなす
+            np.progOrder = new Map(programs.map((p, i) => [p.id, i]));
+            // 曲の長さ（プログラムID と曲順から引く）
+            np.trackDur = new Map();
+            for (const p of programs) for (const t of (p.tracks || [])) {
+                const m = /^(\d+):(\d{2})$/.exec(t.duration || '');
+                if (m) np.trackDur.set(p.id + '|' + t.no, (+m[1]) * 60 + (+m[2]));
+            }
+        } catch (e) {
+            np.dataError = 'CADENCEのデータを読み込めません（' + e.message + '）';
+            console.warn(np.dataError);
+        }
+    }
+
+    // 1曲が複数のプログラムで使われている時は「最も古い」プログラムを選ぶ
+    //   ・LUSTER（イベント用のコンピレーション）は、ほかにプログラムがあれば除く
+    //   ・残りは CADENCE の一覧で最も後ろ（＝古い）にあるもの
+    function npOldestProgram(programs) {
+        if (!programs || !programs.length) return '';
+        const regular = programs.filter(p => !/^LUSTER\b/i.test(p.name));
+        const pool = regular.length ? regular : programs;
+        const order = p => (np.progOrder && np.progOrder.has(p.id)) ? np.progOrder.get(p.id) : -1;
+        return pool.slice().sort((a, b) => order(b) - order(a))[0].name;
+    }
+    // 曲の長さ（秒）。見つからなければ null
+    function npSongDuration(programs) {
+        if (!np.trackDur) return null;
+        for (const p of programs || []) {
+            const d = np.trackDur.get(p.id + '|' + p.no);
+            if (d) return d;
+        }
+        return null;
+    }
+
+    // マイクの音を取り込む準備（録音中だけ音を貯める）＋音の雰囲気を測る解析器
+    function npInit(audioContext, source) {
+        np.ctx = audioContext;
+        const proc = audioContext.createScriptProcessor(4096, 1, 1);
+        proc.onaudioprocess = e => {
+            if (!np.capturing) return;
+            const d = e.inputBuffer.getChannelData(0);
+            np.chunks.push(new Float32Array(d));
+            np.capLen += d.length;
+        };
+        const mute = audioContext.createGain();
+        mute.gain.value = 0;                 // スピーカーには出さない
+        source.connect(proc);
+        proc.connect(mute);
+        mute.connect(audioContext.destination);
+        np.proc = proc;
+
+        const an = audioContext.createAnalyser();
+        an.fftSize = 8192;                   // 音の高さを細かく見分けるため大きめ
+        an.smoothingTimeConstant = 0;
+        source.connect(an);
+        np.featAn = an;
+        np.featBuf = new Float32Array(an.frequencyBinCount);
+        npLoadCadence();
+    }
+
+    // 今の音の特徴：12音（ド〜シ）の成分の割合＋6つの音域の割合
+    function npFeature() {
+        const an = np.featAn, buf = np.featBuf;
+        an.getFloatFrequencyData(buf);
+        const binHz = np.ctx.sampleRate / an.fftSize;
+        const chroma = new Float32Array(12), bands = new Float32Array(6);
+        const edges = [40, 120, 300, 800, 2000, 5000, 12000];
+        let total = 0;
+        for (let i = 1; i < buf.length; i++) {
+            const f = i * binHz;
+            if (f < 40 || f > 12000) continue;
+            const pw = Math.pow(10, buf[i] / 10);
+            total += pw;
+            for (let b = 0; b < 6; b++) if (f >= edges[b] && f < edges[b + 1]) { bands[b] += pw; break; }
+            if (f >= 100 && f <= 2500) {
+                const pc = ((Math.round(12 * Math.log2(f / 440)) % 12) + 12) % 12;
+                chroma[pc] += pw;
+            }
+        }
+        if (total <= 0) return null;
+        const norm = v => { let s = 0; for (const x of v) s += x * x; s = Math.sqrt(s) || 1; return Array.from(v, x => x / s); };
+        // 大きい成分ばかりに引っぱられないよう平方根で圧縮してから正規化
+        return { chroma: norm(chroma.map(Math.sqrt)), bands: norm(bands.map(Math.sqrt)) };
+    }
+    function npBlend(a, b, k) {
+        if (!a) return { chroma: b.chroma.slice(), bands: b.bands.slice() };
+        return { chroma: a.chroma.map((x, i) => x + (b.chroma[i] - x) * k), bands: a.bands.map((x, i) => x + (b.bands[i] - x) * k) };
+    }
+    function npDistance(a, b) {
+        const cos = (u, v) => { let d = 0, nu = 0, nv = 0; for (let i = 0; i < u.length; i++) { d += u[i] * v[i]; nu += u[i] * u[i]; nv += v[i] * v[i]; } return d / (Math.sqrt(nu * nv) || 1); };
+        // キーの違いを重視（音域のバランスは曲の中でも変わりやすいので軽め）
+        return 0.75 * (1 - cos(a.chroma, b.chroma)) + 0.25 * (1 - cos(a.bands, b.bands));
+    }
+    // 200msごとに特徴を測り、「今の雰囲気（約6秒の平均）」と「この曲の雰囲気（ゆっくり追従）」を比べる
+    function npTrackChange(now, music) {
+        if (!np.featAn || now - np.featAt < 200) return;
+        const dt = (now - np.featAt) / 1000;
+        np.featAt = now;
+        if (!music) return;
+        const f = npFeature();
+        if (!f) return;
+        np.cur = npBlend(np.cur, f, 1 - Math.exp(-dt / CFG.npChangeWindow));
+        if (!np.ref) { np.ref = npBlend(null, np.cur, 1); return; }
+        np.change = npDistance(np.cur, np.ref);
+        np.ref = npBlend(np.ref, np.cur, 1 - Math.exp(-dt / CFG.npRefWindow));   // 曲の中の展開にはゆっくり追従
+        if (np.change > CFG.npChangeThreshold) {
+            if (!np.changeSince) np.changeSince = now;
+        } else {
+            np.changeSince = 0;
+        }
+    }
+
+    // 貯めた音を 16kHz・モノラルの WAV にする
+    function npMakeWav() {
+        const sr = np.ctx.sampleRate, target = 16000;
+        const all = new Float32Array(np.capLen);
+        let o = 0;
+        for (const c of np.chunks) { all.set(c, o); o += c.length; }
+        const ratio = sr / target, n = Math.floor(all.length / ratio);
+        const pcm = new Int16Array(n);
+        for (let i = 0; i < n; i++) {
+            const a = Math.floor(i * ratio), b = Math.min(all.length, Math.floor((i + 1) * ratio));
+            let s = 0;
+            for (let j = a; j < b; j++) s += all[j];
+            const v = Math.max(-1, Math.min(1, s / Math.max(1, b - a)));
+            pcm[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
+        }
+        const buf = new ArrayBuffer(44 + pcm.length * 2), dv = new DataView(buf);
+        const w = (off, str) => { for (let i = 0; i < str.length; i++) dv.setUint8(off + i, str.charCodeAt(i)); };
+        w(0, 'RIFF'); dv.setUint32(4, 36 + pcm.length * 2, true); w(8, 'WAVE');
+        w(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+        dv.setUint32(24, target, true); dv.setUint32(28, target * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+        w(36, 'data'); dv.setUint32(40, pcm.length * 2, true);
+        new Int16Array(buf, 44).set(pcm);
+        return new Blob([buf], { type: 'audio/wav' });
+    }
+
+    function npCapture(seconds) {
+        return new Promise(resolve => {
+            np.chunks = []; np.capLen = 0; np.capturing = true;
+            setTimeout(() => { np.capturing = false; resolve(npMakeWav()); }, seconds * 1000);
+        });
+    }
+
+    function npLs(key) { try { return localStorage.getItem(key) || ''; } catch (e) { return ''; } }
+    // 認識に必要な設定がそろっているか
+    function npReady() {
+        if (CFG.npService === 'audd') return !!npLs('fcv-auddToken');
+        return !!(npLs('fcv-acrHost') && npLs('fcv-acrKey') && npLs('fcv-acrSecret'));
+    }
+
+    // 通信が返ってこない時に止まったままにならないよう、一定時間で打ち切る
+    async function npPost(url, body) {
+        const ac = new AbortController();
+        const timer = setTimeout(() => ac.abort(), CFG.npTimeoutSec * 1000);
+        try {
+            const res = await fetch(url, { method: 'POST', body, signal: ac.signal });
+            return await res.json();
+        } finally { clearTimeout(timer); }
+    }
+
+    // AudD に問い合わせる
+    async function npAskAudd(wav) {
+        const fd = new FormData();
+        fd.append('file', wav, 'clip.wav');
+        fd.append('api_token', npLs('fcv-auddToken'));
+        const json = await npPost(CFG.npApiUrl, fd);
+        if (json.status !== 'success') return { ok: false, why: (json.error && json.error.error_message) || 'エラー' };
+        if (!json.result) return { ok: false, why: '該当なし' };
+        const tc = /^(?:(\d+):)?(\d+):(\d{2})$/.exec(json.result.timecode || '');
+        // AudD の timecode は「録音の始まり」が曲のどこだったか
+        return { ok: true, title: json.result.title || '', artist: json.result.artist || '',
+                 pos: tc ? (+(tc[1] || 0)) * 3600 + (+tc[2]) * 60 + (+tc[3]) : null, posAt: 'start', dur: null };
+    }
+
+    // ACRCloud に問い合わせる（署名：HMAC-SHA1 → Base64）
+    async function npAskAcr(wav) {
+        const host = npLs('fcv-acrHost').replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+        const key = npLs('fcv-acrKey'), secret = npLs('fcv-acrSecret');
+        const timestamp = String(Math.floor(Date.now() / 1000));
+        const toSign = ['POST', '/v1/identify', key, 'audio', '1', timestamp].join('\n');
+        const enc = new TextEncoder();
+        const k = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
+        const sig = new Uint8Array(await crypto.subtle.sign('HMAC', k, enc.encode(toSign)));
+        let bin = '';
+        for (const b of sig) bin += String.fromCharCode(b);
+        const fd = new FormData();
+        fd.append('sample', wav, 'clip.wav');
+        fd.append('sample_bytes', String(wav.size));
+        fd.append('access_key', key);
+        fd.append('data_type', 'audio');
+        fd.append('signature_version', '1');
+        fd.append('signature', btoa(bin));
+        fd.append('timestamp', timestamp);
+        const proxy = npLs('fcv-acrProxy');
+        const url = proxy ? proxy.replace(/\/?$/, '/') + '?host=' + encodeURIComponent(host) : 'https://' + host + '/v1/identify';
+        const json = await npPost(url, fd);
+        const code = json.status ? json.status.code : -1;
+        if (code === 1001) return { ok: false, why: '該当なし' };
+        if (code !== 0) return { ok: false, why: (json.status && json.status.msg) || 'エラー' };
+        const m = json.metadata && json.metadata.music && json.metadata.music[0];
+        if (!m) return { ok: false, why: '該当なし' };
+        // ACRCloud の play_offset_ms は「認識した時点（録音の終わり頃）」が曲のどこだったか
+        return { ok: true, title: m.title || '', artist: (m.artists || []).map(a => a.name).join(' & '),
+                 pos: m.play_offset_ms != null ? +m.play_offset_ms / 1000 : null, posAt: 'end',
+                 dur: m.duration_ms ? +m.duration_ms / 1000 : null };
+    }
+
+    async function npRecognize() {
+        np.busy = true;
+        try {
+            npStatus('聞き取り中…');
+            const clipStart = performance.now();
+            const wav = await npCapture(CFG.npClipSec);
+            const clipEnd = performance.now();
+            npStatus('認識中…');
+            const r = CFG.npService === 'audd' ? await npAskAudd(wav) : await npAskAcr(wav);
+            r.clipStart = clipStart; r.clipEnd = clipEnd;
+            return r;
+        } catch (e) {
+            console.warn(e);
+            return { ok: false, why: e.name === 'AbortError' ? '応答なし' : '通信エラー' };
+        } finally {
+            np.busy = false;
+        }
+    }
+
+    // 認識結果を CADENCE と照合して表示する。曲の長さが分かれば返す
+    function npShow(r) {
+        let title = r.title, artist = r.artist, program = '', key = (r.title + '|' + r.artist).toLowerCase(), dur = null;
+        if (np.index) {
+            const m = matchOne({ title: r.title, artist: r.artist, swappable: false }, np.index);
+            if (m.match !== 'none' && m.song) {
+                title = m.song.titleEn || m.song.title;
+                artist = m.song.artistEn || m.song.artist;
+                program = npOldestProgram(m.programs);
+                key = m.song.key;
+                dur = npSongDuration(m.programs);
+            }
+        }
+        if (!program && !CFG.npShowUnknown) return { key, dur, shown: false };
+        if (np.current && np.current.key === key) return { key, dur, shown: true, same: true };   // 同じ曲なら表示はそのまま
+        const hadText = np.el.textContent.trim() !== '';
+        np.current = { key, title, artist, program };
+        const el = np.el;
+        el.style.opacity = '0';
+        setTimeout(() => {
+            el.querySelector('.np-title').textContent = title;
+            el.querySelector('.np-artist').textContent = artist;
+            el.querySelector('.np-program').textContent = program;
+            el.style.opacity = '1';
+        }, hadText ? 600 : 0);
+        return { key, dur, shown: true, same: false, title, program };
+    }
+
+    // 毎フレーム：いつ認識するかを決める
+    function npUpdate(now, loud) {
+        if (!np.ctx || !np.el) return;
+        // 音楽が鳴っているか：キックが聞こえている、または一定以上の音量がある
+        if (loud > CFG.npLoudLevel) np.lastLoud = now;
+        const music = (lastKick > 0 && now - lastKick < 3000) || (np.lastLoud > 0 && now - np.lastLoud < 3000);
+        npTrackChange(now, music);
+        if (np.statusEl && panelVisible) {
+            const wait = (!np.busy && np.nextDue > now && np.nextDue - now < 1e8) ? `（${Math.ceil((np.nextDue - now) / 1000)}秒後に確認）` : '';
+            const chg = np.ref ? `｜変化${np.change.toFixed(2)}` : '';
+            const text = '曲名: ' + np.statusText + wait + chg;
+            if (np.statusEl.textContent !== text) np.statusEl.textContent = text;
+        }
+        if (!npEnabled()) {
+            if (np.el.style.opacity !== '0') np.el.style.opacity = '0';
+            return;
+        }
+        if (!music) {
+            // 音楽が止まったら少し待って表示を消す（曲間で消えすぎないよう 8 秒）
+            if (np.lastMusic) {
+                np.lastMusic = false;
+                clearTimeout(np.hideTimer);
+                np.hideTimer = setTimeout(() => { np.el.style.opacity = '0'; np.current = null; }, 8000);
+            }
+            return;
+        }
+        if (!np.lastMusic) {
+            // 音楽が始まった：数秒後に認識
+            np.lastMusic = true;
+            clearTimeout(np.hideTimer);
+            np.nextDue = Math.min(Math.max(np.nextDue, now), now + CFG.npStartDelaySec * 1000);
+            if (!np.current) np.nextDue = now + CFG.npStartDelaySec * 1000;
+        }
+        // ② 音の雰囲気が大きく変わった状態が続いた → 新しい曲の可能性が高いので、すぐ確認
+        if (np.changeSince && now - np.changeSince > CFG.npChangeHoldSec * 1000 &&
+            now - np.lastDoneAt > CFG.npMinGapSec * 1000 && !np.busy && np.nextDue > now) {
+            np.nextDue = now;
+            np.reason = '雰囲気が変化';
+        }
+        if (np.busy || now < np.nextDue) return;
+        if (!npReady()) { npStatus('APIキー未設定'); np.nextDue = now + 5000; return; }
+        np.nextDue = now + 1e9;   // 認識が終わるまで次は入れない
+        npRecognize().then(r => {
+            const t = performance.now();
+            np.lastDoneAt = t;
+            if (r.ok) {
+                np.failStreak = 0;
+                const s = npShow(r);
+                npStatus(s.shown ? (s.same ? '同じ曲' : '新しい曲') + '：' + (np.current ? np.current.title : r.title)
+                                 : 'CADENCEに無い曲');
+                // ③ 定期確認
+                let next = t + CFG.npIntervalSec * 1000;
+                // ① 曲の残り時間から、次の曲に替わった頃に確認
+                const dur = r.dur || s.dur;
+                if (dur && r.pos !== null) {
+                    const ref = r.posAt === 'end' ? r.clipEnd : r.clipStart;
+                    const endAt = ref + (dur - r.pos) * 1000;
+                    const atEnd = endAt + CFG.npAfterEndSec * 1000;
+                    if (atEnd > t + 5000) next = Math.min(next, atEnd);
+                }
+                np.nextDue = next;
+                // この曲の雰囲気を基準にし直す
+                if (np.cur) np.ref = npBlend(null, np.cur, 1);
+                np.changeSince = 0;
+            } else {
+                np.failStreak++;
+                // 認識できなかった：すぐやり直す（続けて失敗したら少し間を空ける）
+                const wait = np.failStreak >= 3 ? CFG.npRetrySec * 3 : CFG.npRetrySec;
+                npStatus(r.why + ' → 再挑戦');
+                np.nextDue = t + wait * 1000;
+            }
+        });
+    }
+
     function createAnimations() {
         const beatsPerRev = 360 / CFG.degPerBeat;
         const turn = 360 * (CFG.direction >= 0 ? 1 : -1);
@@ -2738,6 +3188,9 @@
             const bufferLength = analyser.frequencyBinCount;
             const dataArray = new Uint8Array(bufferLength);
             const source = audioContext.createMediaStreamSource(stream);
+            np.el = document.getElementById('nowPlaying');
+            np.statusEl = document.getElementById('npStatus');
+            npInit(audioContext, source);
             source.connect(analyser);
 
             // キック検出用：低音（〜150Hz）だけ取り出し、振幅が「急に跳ね上がった瞬間」をキックとする
@@ -2795,6 +3248,7 @@
                 detectKick(now, dt);
                 steerAnimations(now);
                 updateCells(now, dt, normalizedBass);
+                npUpdate(now, normalizedBass);
                 if (panelVisible) bpmLabel.textContent = bpm ? `BPM ${Math.round(bpm)}` : 'BPM --';
 
                 // 2. 発光
