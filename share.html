@@ -100,11 +100,18 @@
   // ===== Firebase =====
   firebase.initializeApp(FIREBASE);
   const db = firebase.database();
-  db.ref('remote/visualizer/online').on('value', s => {
+  // タブレット（ビジュアライザー）がつながっているか：端末ごとの目印のうち、90秒以内に更新されたものを数える
+  let serverOffset = 0, visualizers = {};
+  db.ref('.info/serverTimeOffset').on('value', s => { serverOffset = s.val() || 0; showTablet(); });
+  db.ref('remote/visualizers').on('value', s => { visualizers = s.val() || {}; showTablet(); });
+  function showTablet() {
+    const now = Date.now() + serverOffset;
+    const n = Object.values(visualizers).filter(v => v && v.at && now - v.at < 90 * 1000).length;
     const b = $('tabletBadge');
-    if (s.val() === true) { b.textContent = 'タブレット：接続中'; b.className = 'badge on'; }
+    if (n > 0) { b.textContent = n > 1 ? `タブレット：接続中（${n}台）` : 'タブレット：接続中'; b.className = 'badge on'; }
     else { b.textContent = 'タブレット：未接続'; b.className = 'badge off'; }
-  });
+  }
+  setInterval(showTablet, 10000);
   db.ref('remote/nowPlaying').on('value', s => {
     const v = s.val();
     if (!v || v.clear) { $('nowTitle').textContent = '—'; $('nowSub').textContent = v && v.clear ? '（消しました）' : ''; return; }

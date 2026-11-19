@@ -2849,16 +2849,21 @@
             if (!firebase.apps.length) firebase.initializeApp(CFG.npFirebase);
             const db = firebase.database();
             // タブレットがつながっていることをスマホに知らせる
+            //   開いている端末ごとに別々の目印（remote/visualizers/端末ID）を置き、閉じたら自分の目印だけ消す。
+            //   （1つの目印を共有すると、別の端末や古いページが閉じた時に「未接続」に上書きされてしまうため）
+            //   電源が急に切れて目印が残った時のために、30秒ごとに時刻を更新する（スマホは古い目印を無視する）
+            const me = db.ref('remote/visualizers/' + Math.random().toString(36).slice(2, 10));
             db.ref('.info/connected').on('value', snap => {
                 if (snap.val() === true) {
-                    const me = db.ref('remote/visualizer');
-                    me.onDisconnect().update({ online: false });
-                    me.update({ online: true, at: firebase.database.ServerValue.TIMESTAMP });
+                    me.onDisconnect().remove();
+                    me.set({ at: firebase.database.ServerValue.TIMESTAMP, ua: navigator.userAgent.slice(0, 60) });
                     npStatus('スマホからの曲名を待っています');
                 } else {
                     npStatus('スマホと接続中…');
                 }
             });
+            setInterval(() => me.update({ at: firebase.database.ServerValue.TIMESTAMP }), 30000);
+            window.addEventListener('pagehide', () => { me.remove(); });
             const opened = Date.now();
             db.ref('remote/nowPlaying').on('value', snap => {
                 const v = snap.val();
@@ -2867,6 +2872,7 @@
                 if (!np.remoteSeen && v.ts && v.ts < opened - 60 * 1000) { np.remoteSeen = true; return; }
                 np.remoteSeen = true;
                 if (v.clear) {
+                    np.lastRemoteTs = v.ts;
                     np.el.style.opacity = '0';
                     np.current = null;
                     npStatus('表示を消しました');
@@ -2880,6 +2886,9 @@
         }
     }
     function npRemoteShow(v) {
+        // 同じ送信（同じ時刻）の通知が重ねて届いても、表示をやり直さない
+        if (v.ts && v.ts === np.lastRemoteTs) return;
+        np.lastRemoteTs = v.ts;
         let title = v.title || '', artist = v.artist || '', program = '', key = v.key || (title + '|' + artist).toLowerCase();
         const song = v.key && np.songs ? np.songs.find(s => s.key === v.key) : null;
         if (song) {
